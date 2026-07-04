@@ -1,31 +1,38 @@
 require('dotenv').config();
-const { Telegraf } = require('telegraf');
 const express = require('express');
+const { Telegraf } = require('telegraf');
 
-const bot = new Telegraf(process.env.BOT_TOKEN);
 const app = express();
-
 app.use(express.json());
 
-// запуск бота
+// === Telegram Bot ===
+const bot = new Telegraf(process.env.BOT_TOKEN);
+
+// === ПРОСТАЯ ПРОВЕРКА БОТА ===
 bot.start((ctx) => {
-  ctx.reply('MOSTI запущен 🚀');
+  ctx.reply('MOSTI бот активен 🚀');
 });
 
-// обработка сообщений
+// === ЛОВИМ ВСЕ СООБЩЕНИЯ ===
 bot.on('text', (ctx) => {
-  console.log('Сообщение:', ctx.message.text);
-  ctx.reply('Заявка получена ✅');
+  console.log('Новое сообщение:', ctx.message.text);
+
+  ctx.reply('Сообщение получено ✔️');
 });
 
-// webhook (пока заглушка)
-app.post('/webhook', (req, res) => {
-  console.log('Webhook:', req.body);
+// === WEBHOOK ДЛЯ RENDER ===
+app.post('/api/telegram/webhook', (req, res) => {
+  bot.handleUpdate(req.body);
   res.sendStatus(200);
 });
 
-bot.launch();
+// === ПРОВЕРКА СЕРВЕРА ===
+app.get('/', (req, res) => {
+  res.send('MOSTI server is running 🚀');
+});
 
-app.listen(3000, () => {
-  console.log('Server running on port 3000');
+// === ЗАПУСК ===
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
