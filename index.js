@@ -2,11 +2,16 @@ require('dotenv').config();
 
 const express = require('express');
 const { Telegraf } = require('telegraf');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(express.json());
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_KEY
+);
 
 // Команда /start
 bot.start((ctx) => {
@@ -14,9 +19,25 @@ bot.start((ctx) => {
 });
 
 // Ответ на любое текстовое сообщение
-bot.on('text', (ctx) => {
-    console.log('Получено сообщение:', ctx.message.text);
-    ctx.reply('Сообщение получено ✅');
+bot.on('text', async (ctx) => {
+
+    const text = ctx.message.text;
+
+    const { error } = await supabase
+        .from('orders')
+        .insert([
+            {
+                raw_text: text
+            }
+        ]);
+
+    if (error) {
+        console.log(error);
+        return ctx.reply("❌ Ошибка сохранения заявки.");
+    }
+
+    ctx.reply("✅ Заявка принята.");
+});
 });
 
 // Webhook
