@@ -24,7 +24,36 @@ bot.start((ctx) => {
 });
 
 // ======================
-// PRODUCT EXTRACTOR (NEW LOGIC)
+// PRODUCT NORMALIZATION
+// ======================
+function normalizeProduct(text) {
+
+    let t = text.toLowerCase();
+
+    const rules = [
+        { from: /стир[\s\-]*суш/g, to: "стирально-сушильная машина" },
+        { from: /машина\s*стир/g, to: "стиральная машина" },
+        { from: /стир\w*/g, to: "стиральная машина" },
+
+        { from: /хол(од)?/g, to: "холодильник" },
+        { from: /мороз/g, to: "морозильник" },
+        { from: /плита/g, to: "плита" },
+        { from: /посудомой/g, to: "посудомоечная машина" }
+    ];
+
+    for (const rule of rules) {
+        t = t.replace(rule.from, rule.to);
+    }
+
+    // вернуть с нормальной капитализацией
+    return t
+        .split(' ')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+}
+
+// ======================
+// PRODUCT EXTRACTOR
 // ======================
 function extractProduct(text, order_number, customer_name, location, phones) {
 
@@ -47,7 +76,9 @@ function extractProduct(text, order_number, customer_name, location, phones) {
         .replace(/\s+/g, ' ')
         .trim();
 
-    return result.length > 2 ? result : "Не указано";
+    if (!result || result.length < 2) return "Не указано";
+
+    return normalizeProduct(result);
 }
 
 // ======================
@@ -56,7 +87,6 @@ function extractProduct(text, order_number, customer_name, location, phones) {
 bot.on('text', async (ctx) => {
 
     const text = ctx.message.text;
-    console.log("RAW:", text);
 
     try {
 
@@ -70,7 +100,7 @@ bot.on('text', async (ctx) => {
             .replace(/прошу.*$/gi, '')
             .trim();
 
-        // PHONE
+        // PHONES
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
         let phones = null;
@@ -87,11 +117,10 @@ bot.on('text', async (ctx) => {
         const customer_name = parts[1] || null;
         const location = parts[2] || null;
 
-        // CITY + ADDRESS (FULL TEXT FIX)
         const city = location || null;
         const address = location || null;
 
-        // PRODUCT (FIXED)
+        // PRODUCT
         let product = extractProduct(
             cleaned,
             order_number,
@@ -100,11 +129,6 @@ bot.on('text', async (ctx) => {
             phones
         );
 
-        if (!product || product.length < 2) {
-            product = "Не указано";
-        }
-
-        // SAVE
         const { error } = await supabase
             .from('Orders')
             .insert([
@@ -146,14 +170,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
 });
 
 // ======================
-// HEALTH CHECK
-// ======================
-app.get('/', (req, res) => {
-    res.send('MOSTI server is running 🚀');
-});
-
-// ======================
-// START SERVER
+// SERVER
 // ======================
 const PORT = process.env.PORT || 3000;
 
