@@ -64,26 +64,32 @@ bot.on('text', async (ctx) => {
         const city = location;
         const address = location;
 
-        // ======================
-        // PRODUCT PARSER
-        // ======================
-        let product = cleaned;
+       // ======================
+// PRODUCT PARSER (СТАБИЛЬНЫЙ ВОЗВРАТ)
+// ======================
 
-        product = product
-            .replace(order_number || '', '')
-            .replace(customer_name || '', '')
-            .replace(location || '', '')
-            .replace(phones || '', '')
-            .replace(/к\.?\s*т\.?.*$/gi, '')
-            .replace(/контактн(ый|ого)\s*телефон.*$/gi, '')
-            .replace(/дополнительн(ый|ого)\s*номер.*$/gi, '')
-            .replace(/гар\.?\s*талон.*$/gi, '')
-            .replace(/гарантийн(ый|ого)\s*талон.*$/gi, '')
-            .replace(/на\s*(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
-            .replace(/прошу.*$/gi, '')
-            .replace(/,\s*,/g, ',')
-            .replace(/\s{2,}/g, ' ')
-            .trim();
+// берём "грязный, но полный" текст
+let product = cleaned;
+
+// убираем только очевидный мусор
+product = product
+    .replace(order_number || '', '')
+    .replace(customer_name || '', '')
+    .replace(location || '', '')
+    .replace(phones || '', '')
+    .replace(/к\.?\s*т\.?.*$/gi, '')
+    .replace(/контактн.*телефон.*/gi, '')
+    .replace(/дополнительн.*номер.*/gi, '')
+    .replace(/гар\.?\s*талон.*/gi, '')
+    .replace(/гарантийн.*талон.*/gi, '')
+    .replace(/на\s*(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
+    .replace(/прошу.*$/gi, '')
+    .trim();
+
+// 🔥 ВАЖНО: защита от пустого товара
+if (!product || product.length < 3) {
+    product = cleaned; // fallback — берём всё что есть
+}
 
         if (!product || product.length < 2) {
             product = "Не указано";
