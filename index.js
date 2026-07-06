@@ -37,8 +37,6 @@ bot.start((ctx) => {
 bot.on('text', async (ctx) => {
     try {
         const text = ctx.message.text;
-        console.log("📩 RAW MESSAGE:", text);
-
         const cleaned = text.replace(/\s+/g, ' ').trim();
 
         // PHONE
@@ -54,42 +52,41 @@ bot.on('text', async (ctx) => {
 
         const order_number = parts[0] || null;
         const customer_name = parts[1] || null;
-        const location = parts[2] || null;
 
-        const city = location;
-        const address = location;
+        let rest = parts.slice(2).join(' - ') || '';
+
+        const city = rest;
 
         // ======================
-        // PRODUCT (СТАРЫЙ СТАБИЛЬНЫЙ ВАРИАНТ)
+        // PRODUCT (СТАБИЛЬНО)
         // ======================
         let product = cleaned;
 
         product = product
             .replace(order_number || '', '')
             .replace(customer_name || '', '')
-            .replace(location || '', '')
+            .replace(rest || '', '')
             .replace(phones || '', '')
             .replace(/гар\.?\s*талон.*$/gi, '')
             .replace(/гарантийн.*талон.*$/gi, '')
             .replace(/прошу.*$/gi, '')
+            .replace(/на\s*(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
             .trim();
 
-        if (!product || product.length < 2) {
-            product = "Не указано";
+        if (!product || product.length < 3) {
+            product = rest || "Не указано";
         }
 
         product = product.replace(/\s{2,}/g, ' ').trim();
 
-        // ======================
         // SAVE
-        // ======================
         const { error } = await supabase
             .from('Orders')
             .insert([{
                 order_number,
                 customer_name,
                 city,
-                address,
+                address: city,
                 phone: phones,
                 product,
                 status: "Собирается на складе."
@@ -109,41 +106,7 @@ bot.on('text', async (ctx) => {
 });
 
 // ======================
-// АВТОЗАКРЫТИЕ ЗАЯВОК (НОВАЯ ФУНКЦИЯ)
-// ======================
-// каждый день закрываем старые заявки (простая логика)
-setInterval(async () => {
-    try {
-        const now = new Date();
-        const today = now.toISOString().split('T')[0];
-
-        const { data } = await supabase
-            .from('Orders')
-            .select('*')
-            .neq('status', 'Доставлен');
-
-        if (!data) return;
-
-        for (const order of data) {
-            const { error } = await supabase
-                .from('Orders')
-                .update({ status: "Доставлен" })
-                .eq('id', order.id);
-
-            if (error) {
-                console.log("AUTO CLOSE ERROR:", error);
-            }
-        }
-
-        console.log("🔁 AUTO CLOSE DONE");
-
-    } catch (e) {
-        console.log("AUTO CLOSE ERROR:", e);
-    }
-}, 24 * 60 * 60 * 1000); // раз в сутки
-
-// ======================
-// WEBHOOK
+// WEBHOOK (ОДИН, НЕ ДВА!!!)
 // ======================
 app.post('/api/telegram/webhook', (req, res) => {
     bot.handleUpdate(req.body);
@@ -151,73 +114,7 @@ app.post('/api/telegram/webhook', (req, res) => {
 });
 
 // ======================
-// SERVER
-// ======================
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, async () => {
-    console.log(`Server running on port ${PORT}`);
-
-    try {
-        await bot.telegram.setWebhook(
-            'https://mosti-bot.onrender.com/api/telegram/webhook'
-        );
-
-        console.log("Webhook установлен успешно ✅");
-
-    } catch (err) {
-        console.error("Webhook error:", err);
-    }
-});
-
-        product = product.replace(/\s{2,}/g, ' ').trim();
-
-        // ======================
-        // SAVE ORDER
-        // ======================
-        const { data, error } = await supabase
-            .from('Orders')
-            .insert([{
-                order_number,
-                customer_name,
-                city,
-                address,
-                phone: phones,
-                product,
-                status: "Собирается на складе."
-            }])
-            .select()
-            .single();
-
-        if (error) {
-            console.log("❌ SUPABASE ERROR:", error);
-            return ctx.reply("❌ Ошибка сохранения заявки");
-        }
-
-        console.log("✅ ORDER SAVED:", data.order_number);
-
-        return ctx.reply("✅ Заявка принята");
-
-    } catch (err) {
-        console.log("❌ ERROR:", err);
-        return ctx.reply("❌ Ошибка обработки заявки");
-    }
-});
-
-// ======================
-// WEBHOOK
-// ======================
-app.post('/api/telegram/webhook', (req, res) => {
-    try {
-        bot.handleUpdate(req.body);
-    } catch (e) {
-        console.log("WEBHOOK ERROR:", e);
-    }
-    res.sendStatus(200);
-});
-
-// ======================
-// AUTO DELIVERY STATUS (НА СЛЕДУЮЩИЙ ДЕНЬ)
+// AUTO CLOSE (через 24 часа)
 // ======================
 setInterval(async () => {
     try {
@@ -226,34 +123,31 @@ setInterval(async () => {
             .select('*')
             .neq('status', 'Заказ доставлен');
 
-        if (!orders || orders.length === 0) return;
+        if (!orders) return;
 
         const now = new Date();
 
         for (const order of orders) {
+            const created = new Date(order.created_at || now);
+            const diff = (now - created) / (1000 * 60 * 60);
 
-            const createdAt = new Date(order.created_at || order.inserted_at || now);
-            const diffHours = (now - createdAt) / (1000 * 60 * 60);
-
-            // через 24 часа закрываем
-            if (diffHours >= 24) {
-
+            if (diff >= 24) {
                 await supabase
                     .from('Orders')
                     .update({ status: 'Заказ доставлен' })
                     .eq('id', order.id);
 
-                console.log("✅ AUTO CLOSED:", order.order_number);
+                console.log("✅ CLOSED:", order.order_number);
             }
         }
 
-    } catch (err) {
-        console.log("AUTO CLOSE ERROR:", err);
+    } catch (e) {
+        console.log("AUTO CLOSE ERROR:", e);
     }
 }, 60 * 60 * 1000);
 
 // ======================
-// TRACK ORDER API
+// TRACK API
 // ======================
 app.post('/api/track-order', async (req, res) => {
     try {
@@ -286,10 +180,7 @@ app.post('/api/track-order', async (req, res) => {
         }
 
         if (!result) {
-            return res.json({
-                found: false,
-                message: "Заказ не найден"
-            });
+            return res.json({ found: false, message: "Заказ не найден" });
         }
 
         return res.json({
@@ -308,14 +199,7 @@ app.post('/api/track-order', async (req, res) => {
 });
 
 // ======================
-// HEALTH CHECK
-// ======================
-app.get('/', (req, res) => {
-    res.send('MOSTI SYSTEM RUNNING 🚀');
-});
-
-// ======================
-// START SERVER
+// SERVER
 // ======================
 const PORT = process.env.PORT || 3000;
 
