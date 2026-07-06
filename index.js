@@ -23,26 +23,24 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 console.log("🚀 MOSTI SYSTEM STARTED");
 
 // ======================
-// START
+// START COMMAND
 // ======================
 bot.start((ctx) => {
     ctx.reply("MOSTI бот активен 🚀");
 });
 
 // ======================
-// TELEGRAM HANDLER
+// TELEGRAM MESSAGE HANDLER
 // ======================
 bot.on('text', async (ctx) => {
-
     try {
         const text = ctx.message.text;
-        console.log("📩 RAW:", text);
+
+        console.log("📩 RAW MESSAGE:", text);
 
         const cleaned = text.replace(/\s+/g, ' ').trim();
 
-        // ======================
         // PHONE EXTRACTION
-        // ======================
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
         let phones = null;
@@ -52,22 +50,17 @@ bot.on('text', async (ctx) => {
                 .join(', ');
         }
 
-        // ======================
-        // SPLIT
-        // ======================
+        // SPLIT BASIC STRUCTURE
         const parts = cleaned.split(' - ').map(p => p.trim());
 
         const order_number = parts[0] || null;
         const customer_name = parts[1] || null;
         const location = parts[2] || null;
 
-        // ВАЖНО: НЕ ломаем адрес
         const city = location;
         const address = location;
 
-        // ======================
-        // PRODUCT CLEANING (СТАБИЛЬНО)
-        // ======================
+        // PRODUCT CLEANING
         let product = cleaned;
 
         product = product
@@ -84,9 +77,7 @@ bot.on('text', async (ctx) => {
             product = "Не указано";
         }
 
-        // ======================
-        // SAVE
-        // ======================
+        // SAVE TO SUPABASE
         const { error } = await supabase
             .from('Orders')
             .insert([{
@@ -104,20 +95,27 @@ bot.on('text', async (ctx) => {
             return ctx.reply("❌ Ошибка сохранения заявки");
         }
 
-        return ctx.reply("✅ Заявка принята");
+        ctx.reply("✅ Заявка принята");
 
     } catch (err) {
         console.log("❌ ERROR:", err);
-        return ctx.reply("❌ Ошибка обработки заявки");
+        ctx.reply("❌ Ошибка обработки заявки");
     }
 });
 
 // ======================
-// TRACK API (САЙТ)
+// TELEGRAM WEBHOOK ROUTE (ВАЖНО)
+// ======================
+app.post('/api/telegram/webhook', (req, res) => {
+    bot.handleUpdate(req.body);
+    res.sendStatus(200);
+});
+
+// ======================
+// TRACK ORDER API
 // ======================
 app.post('/api/track-order', async (req, res) => {
     try {
-
         const { query } = req.body;
 
         if (!query) {
@@ -169,31 +167,17 @@ app.post('/api/track-order', async (req, res) => {
 });
 
 // ======================
-// HEALTH CHECK (ВАЖНО ДЛЯ RENDER)
+// HEALTH CHECK
 // ======================
 app.get('/', (req, res) => {
     res.send('MOSTI SYSTEM RUNNING 🚀');
 });
 
 // ======================
-// START SERVER + WEBHOOK FIX
+// START SERVER
 // ======================
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-
-    try {
-        // 🔥 ВАЖНО: сначала сбрасываем старый webhook
-        await bot.telegram.deleteWebhook();
-
-        await bot.telegram.setWebhook(
-            'https://mosti-bot.onrender.com/api/telegram/webhook'
-        );
-
-        console.log("Webhook установлен успешно ✅");
-
-    } catch (err) {
-        console.error("Webhook error:", err);
-    }
 });
