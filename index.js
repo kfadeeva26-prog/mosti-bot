@@ -73,16 +73,21 @@ bot.on('text', async (ctx) => {
 
         const city = address;
 
-        // PRODUCT (СТАБИЛЬНО)
+        // ======================
+        // PRODUCT (ИСПРАВЛЕННЫЙ СТАБИЛЬНЫЙ ВАРИАНТ)
+        // ======================
+
         let product = "";
 
+// 1. если есть "Товар:"
         const productMatch = cleaned.match(/товар\s*:?\s*(.+)/i);
 
         if (productMatch) {
             product = productMatch[1];
         } else {
+            // 2. ищем технику только если нет адреса внутри
             const techMatch = cleaned.match(
-                /(машина\s+стир(?:-| )?суш.*|машина\s+стиральная.*|холодильник.*|телевизор.*|пылесос.*|духовой\s*шкаф.*|варочная\s*панель.*|кондиционер.*|морозильник.*)/i
+                /(машина\s+стир(?:-| )?суш.*|машина\s*стиральная.*|холодильник.*|телевизор.*|пылесос.*|духовой\s*шкаф.*|варочная\s*панель.*|кондиционер.*|морозильник.*)/i
             );
 
             if (techMatch) {
@@ -90,18 +95,23 @@ bot.on('text', async (ctx) => {
             }
         }
 
-        product = product
+// 3. убираем мусор
+        product = (product || "")
+            .replace(address, '') // 🔥 ВАЖНО: убираем попадание адреса
             .replace(/гар\.?\s*талон.*$/i, "")
             .replace(/гарантийн.*талон.*$/i, "")
             .replace(/прошу.*$/i, "")
             .replace(/\s{2,}/g, " ")
             .trim();
 
-        if (!product) {
-            product = rest;
+// 4. fallback (если вообще пусто)
+        if (!product || product.length < 3) {
+            product = rest || cleaned;
         }
 
+        // ======================
         // SAVE
+        // ======================
         const { error } = await supabase
             .from('Orders')
             .insert([{
@@ -154,7 +164,7 @@ app.post('/api/track-order', async (req, res) => {
         const byOrder = await supabase
             .from('Orders')
             .select('*')
-            .eq('order_number', query)
+            .eq('order_number', String(query).trim())
             .maybeSingle();
 
         if (byOrder.data) result = byOrder.data;
@@ -192,19 +202,12 @@ app.post('/api/track-order', async (req, res) => {
 });
 
 // ======================
-// HEALTH CHECK
-// ======================
-app.get('/', (req, res) => {
-    res.send('MOSTI SYSTEM RUNNING 🚀');
-});
-
-// ======================
 // SERVER
 // ======================
 const PORT = process.env.PORT || 3000;
 
 // ======================
-// ГРАФИК ДОСТАВКИ (НА СЛЕДУЮЩИЙ ДЕНЬ)
+// ГРАФИК + АВТОЗАКРЫТИЕ
 // ======================
 
 function getDeliveryDays(city) {
@@ -220,12 +223,10 @@ function getDeliveryDays(city) {
     return [];
 }
 
-// ВАЖНО: один цикл, без дублей
 async function autoCloseBySchedule() {
     try {
         const now = new Date();
         const day = now.getDay();
-
         const nextDay = (day + 1) % 7;
 
         const { data: orders } = await supabase
@@ -240,7 +241,6 @@ async function autoCloseBySchedule() {
             const city = order.city || "";
             const deliveryDays = getDeliveryDays(city);
 
-            // закрываем НА СЛЕДУЮЩИЙ ДЕНЬ ПОСЛЕ ДОСТАВКИ
             if (deliveryDays.includes(nextDay)) {
 
                 await supabase
@@ -257,12 +257,11 @@ async function autoCloseBySchedule() {
     }
 }
 
-// запуск
 autoCloseBySchedule();
 setInterval(autoCloseBySchedule, 60 * 60 * 1000);
 
 // ======================
-// START SERVER + WEBHOOK
+// START SERVER
 // ======================
 app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
