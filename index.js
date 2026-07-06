@@ -1,20 +1,124 @@
 require('dotenv').config();
 
 const express = require('express');
+const { Telegraf } = require('telegraf');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(express.json());
 
+// ======================
+// SUPABASE
+// ======================
 const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_KEY
 );
 
-console.log("🚀 MOSTI API STARTED");
+// ======================
+// TELEGRAM BOT
+// ======================
+const bot = new Telegraf(process.env.BOT_TOKEN);
+
+console.log("🚀 MOSTI SYSTEM STARTED");
 
 // ======================
-// TRACK ORDER API (САЙТ)
+// TELEGRAM: START
+// ======================
+bot.start((ctx) => {
+    ctx.reply("MOSTI бот активен 🚀");
+});
+
+// ======================
+// TELEGRAM: PARSER + SAVE
+// ======================
+bot.on('text', async (ctx) => {
+
+    const text = ctx.message.text;
+
+    console.log("📩 NEW ORDER:", text);
+
+    try {
+
+        const cleaned = text
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        // ======================
+        // PHONES
+        // ======================
+        const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
+
+        let phones = null;
+        if (phoneMatches) {
+            phones = phoneMatches
+                .map(p => p.replace(/\D/g, ''))
+                .join(', ');
+        }
+
+        // ======================
+        // SPLIT BASIC STRUCTURE
+        // ======================
+        const parts = cleaned.split(' - ').map(p => p.trim());
+
+        const order_number = parts[0] || null;
+        const customer_name = parts[1] || null;
+        const location = parts[2] || null;
+
+        const city = location || null;
+        const address = location || null;
+
+        // ======================
+        // PRODUCT (SAFE FULL TEXT)
+        // ======================
+        let product = cleaned;
+
+        product = product
+            .replace(order_number || '', '')
+            .replace(customer_name || '', '')
+            .replace(location || '', '')
+            .replace(phones || '', '')
+            .replace(/гар\.?\s*талон.*$/gi, '')
+            .replace(/гарантийный\s*талон.*$/gi, '')
+            .replace(/прошу.*$/gi, '')
+            .trim();
+
+        if (!product || product.length < 2) {
+            product = "Не указано";
+        }
+
+        // ======================
+        // SAVE TO SUPABASE
+        // ======================
+        const { error } = await supabase
+            .from('Orders')
+            .insert([
+                {
+                    order_number,
+                    customer_name,
+                    city,
+                    address,
+                    phone: phones,
+                    product,
+                    status: "Собирается на складе."
+                }
+            ]);
+
+        if (error) {
+            console.log("❌ SUPABASE ERROR:", error);
+            return ctx.reply("❌ Ошибка сохранения заявки");
+        }
+
+        return ctx.reply("✅ Заявка принята");
+
+    } catch (err) {
+        console.log("❌ ERROR:", err);
+        return ctx.reply("❌ Ошибка обработки заявки");
+    }
+});
+
+// ======================
+// WEBSITE API (TRACK ORDER)
 // ======================
 app.post('/api/track-order', async (req, res) => {
     try {
@@ -27,11 +131,11 @@ app.post('/api/track-order', async (req, res) => {
             });
         }
 
-        const cleanQuery = query.replace(/\s+/g, '').replace(/\D/g, '');
+        const cleanQuery = query.replace(/\D/g, '');
 
         let result = null;
 
-        // 1. поиск по номеру заказа
+        // search by order number
         const byOrder = await supabase
             .from('Orders')
             .select('*')
@@ -42,7 +146,7 @@ app.post('/api/track-order', async (req, res) => {
             result = byOrder.data;
         }
 
-        // 2. поиск по телефону
+        // search by phone
         if (!result) {
             const byPhone = await supabase
                 .from('Orders')
@@ -84,14 +188,25 @@ app.post('/api/track-order', async (req, res) => {
 // HEALTH CHECK
 // ======================
 app.get('/', (req, res) => {
-    res.send('MOSTI TRACKING API RUNNING 🚀');
+    res.send('MOSTI SYSTEM RUNNING 🚀');
 });
 
 // ======================
-// START SERVER
+// START SERVER + WEBHOOK
 // ======================
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
+
+    try {
+        await bot.telegram.setWebhook(
+            'https://mosti-bot.onrender.com/api/telegram/webhook'
+        );
+
+        console.log("Webhook установлен успешно ✅");
+
+    } catch (err) {
+        console.error("Webhook error:", err);
+    }
 });
