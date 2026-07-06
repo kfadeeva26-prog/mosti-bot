@@ -17,7 +17,7 @@ const supabase = createClient(
 console.log("🚀 MOSTI LOGISTICS SYSTEM STARTED");
 
 // =======================
-// ROUTES (ГРАФИК)
+// ROUTES
 // =======================
 
 const ROUTES = {
@@ -31,97 +31,7 @@ const ROUTES = {
 };
 
 // =======================
-// CITY → REGION MAP
-// =======================
-
-function getRegion(city) {
-    if (!city) return null;
-
-    const c = city.toLowerCase().trim();
-
-    const map = {
-        "минск": "minsk",
-
-        "витебск": "vitebsk",
-        "могилев": "mogilev",
-        "могилёв": "mogilev",
-
-        "гродно": "grodno",
-        "брест": "brest",
-        "гомель": "gomel"
-    };
-
-    return map[c] || null;
-}
-
-// =======================
-// REGION → DELIVERY DAY
-// =======================
-
-function getDeliveryDay(region) {
-    if (!region) return null;
-
-    for (const [day, regions] of Object.entries(ROUTES)) {
-        if (regions.includes(region)) {
-            return day;
-        }
-    }
-
-    return null;
-}
-
-// =======================
-// CURRENT DAY
-// =======================
-
-function getToday() {
-    return new Date()
-        .toLocaleDateString('en-US', { weekday: 'long' })
-        .toLowerCase();
-}
-
-// =======================
-// STATUS ENGINE
-// =======================
-
-function getStatus(order) {
-
-    const region = getRegion(order.city);
-    const deliveryDay = getDeliveryDay(region);
-
-    const today = getToday();
-
-    // если не нашли город
-    if (!deliveryDay) {
-        return "Собирается на складе.";
-    }
-
-    // если сегодня день доставки
-    if (today === deliveryDay) {
-        return "Доставка ожидается сегодня. Водитель скоро свяжется.";
-    }
-
-    // если доставка позже
-    const daysOrder = {
-        monday: 1,
-        tuesday: 2,
-        wednesday: 3,
-        thursday: 4,
-        friday: 5,
-        saturday: 6,
-        sunday: 0
-    };
-
-    if (daysOrder[today] < daysOrder[deliveryDay]) {
-        return "Собирается на складе.";
-    }
-
-    // если день уже прошёл → перенос
-    return "Заказ передан в доставку.";
-}
-
-// =======================
-// BOT (ПРИЁМ ЗАЯВОК)
+// BOT LOGIC
 // =======================
 
 bot.start((ctx) => {
@@ -133,13 +43,12 @@ bot.on('text', async (ctx) => {
     const text = ctx.message.text;
 
     try {
-
         const parts = text.split(' - ').map(p => p.trim());
 
-        const order_number = parts[0] || null;
-        const customer_name = parts[1] || null;
+        const order_number = parts[0];
+        const customer_name = parts[1];
 
-        let location = parts[2] || null;
+        let location = parts[2];
         let city = null;
 
         if (location) {
@@ -147,24 +56,24 @@ bot.on('text', async (ctx) => {
             if (match) city = match[1].trim();
         }
 
-        const product = parts[4] || null;
+        const product = parts[4];
 
-        const { data, error } = await supabase
+        const { error } = await supabase
             .from('Orders')
             .insert([
                 {
                     order_number,
                     customer_name,
                     city,
+                    address: location,
                     product,
-                    status: "Собирается на складе.",
-                    raw_text: text
+                    status: "Собирается на складе."
                 }
             ]);
 
         if (error) {
-            console.log(error);
-            return ctx.reply("❌ Ошибка сохранения");
+            console.log("DB ERROR:", error);
+            return ctx.reply("❌ Ошибка сохранения заявки");
         }
 
         ctx.reply("✅ Заявка принята");
@@ -176,44 +85,44 @@ bot.on('text', async (ctx) => {
 });
 
 // =======================
-// API ДЛЯ САЙТА
+// WEBHOOK ENDPOINT
 // =======================
 
-app.get('/api/status/:order_number', async (req, res) => {
-
-    const order_number = req.params.order_number;
-
-    const { data, error } = await supabase
-        .from('Orders')
-        .select('*')
-        .eq('order_number', order_number)
-        .single();
-
-    if (error || !data) {
-        return res.json({
-            success: false,
-            message: "Заявка не найдена"
-        });
+app.post('/api/telegram/webhook', async (req, res) => {
+    try {
+        await bot.handleUpdate(req.body);
+        res.sendStatus(200);
+    } catch (err) {
+        console.error("WEBHOOK ERROR:", err);
+        res.sendStatus(500);
     }
-
-    const status = getStatus(data);
-
-    return res.json({
-        success: true,
-        order_number: data.order_number,
-        customer_name: data.customer_name,
-        city: data.city,
-        product: data.product,
-        status: status
-    });
 });
 
 // =======================
-// SERVER START
+// HEALTH CHECK
+// =======================
+
+app.get('/', (req, res) => {
+    res.send('MOSTI server is running 🚀');
+});
+
+// =======================
+// START SERVER
 // =======================
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
+
+    try {
+        await bot.telegram.setWebhook(
+            'https://mosti-bot.onrender.com/api/telegram/webhook'
+        );
+
+        console.log("Webhook установлен успешно ✅");
+
+    } catch (err) {
+        console.error("Webhook error:", err);
+    }
 });
