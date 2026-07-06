@@ -23,20 +23,23 @@ bot.on('text', async (ctx) => {
 
     const text = ctx.message.text;
 
-    const { error } = await supabase
-        .from('orders')
-        .insert([
-            {
-                raw_text: text
-            }
-        ]);
+    const { data, error } = await supabase
+    .from('orders')
+    .insert([
+        {
+            raw_text: text
+        }
+    ])
+    .select();
 
-    if (error) {
-        console.log(error);
-        return ctx.reply("❌ Ошибка сохранения заявки.");
-    }
+console.log("SUPABASE DATA:", data);
+console.log("SUPABASE ERROR:", error);
 
-    ctx.reply("✅ Заявка принята.");
+if (error) {
+    return ctx.reply("❌ Ошибка сохранения заявки.");
+}
+
+ctx.reply("✅ Заявка принята.");
 });
 });
 
