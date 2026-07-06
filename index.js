@@ -41,68 +41,134 @@ bot.on('text', async (ctx) => {
 
         const cleaned = text.replace(/\s+/g, ' ').trim();
 
-        // ======================
-        // PHONE DETECTION
-        // ======================
+        // PHONE
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
         let phones = null;
         if (phoneMatches) {
-            phones = phoneMatches
-                .map(p => p.replace(/\D/g, ''))
-                .filter(p => p.length >= 9)
-                .join(', ');
+            phones = phoneMatches.map(p => p.replace(/\D/g, '')).join(', ');
         }
 
-        // ======================
-        // PARSING
-        // ======================
+        // SPLIT
         const parts = cleaned.split(' - ').map(p => p.trim());
 
         const order_number = parts[0] || null;
         const customer_name = parts[1] || null;
+        const location = parts[2] || null;
 
-        const rest = parts.slice(2).join(' ') || cleaned;
+        const city = location;
+        const address = location;
 
-        let address = rest
-            .replace(/к\.?\s*т\.?.*$/gi, '')
-            .replace(/контактн.*телефон.*/gi, '')
-            .replace(/дополнительн.*номер.*/gi, '')
+        // ======================
+        // PRODUCT (СТАРЫЙ СТАБИЛЬНЫЙ ВАРИАНТ)
+        // ======================
+        let product = cleaned;
+
+        product = product
+            .replace(order_number || '', '')
+            .replace(customer_name || '', '')
+            .replace(location || '', '')
+            .replace(phones || '', '')
             .replace(/гар\.?\s*талон.*$/gi, '')
             .replace(/гарантийн.*талон.*$/gi, '')
             .replace(/прошу.*$/gi, '')
             .trim();
 
-        const city = address;
+        if (!product || product.length < 2) {
+            product = "Не указано";
+        }
 
-    // ======================
-// PRODUCT (СТАБИЛЬНО И ПРОСТО)
+        product = product.replace(/\s{2,}/g, ' ').trim();
+
+        // ======================
+        // SAVE
+        // ======================
+        const { error } = await supabase
+            .from('Orders')
+            .insert([{
+                order_number,
+                customer_name,
+                city,
+                address,
+                phone: phones,
+                product,
+                status: "Собирается на складе."
+            }]);
+
+        if (error) {
+            console.log("❌ SUPABASE ERROR:", error);
+            return ctx.reply("❌ Ошибка сохранения заявки");
+        }
+
+        return ctx.reply("✅ Заявка принята");
+
+    } catch (err) {
+        console.log("❌ ERROR:", err);
+        return ctx.reply("❌ Ошибка обработки заявки");
+    }
+});
+
 // ======================
+// АВТОЗАКРЫТИЕ ЗАЯВОК (НОВАЯ ФУНКЦИЯ)
+// ======================
+// каждый день закрываем старые заявки (простая логика)
+setInterval(async () => {
+    try {
+        const now = new Date();
+        const today = now.toISOString().split('T')[0];
 
-// Берём всё после телефона или после последнего "-"
-let product = cleaned;
+        const { data } = await supabase
+            .from('Orders')
+            .select('*')
+            .neq('status', 'Доставлен');
 
-// убираем только явный мусор, НИЧЕГО больше
-product = product
-    .replace(order_number || '', '')
-    .replace(customer_name || '', '')
-    .replace(phones || '', '')
-    .replace(/к\.?\s*т\.?.*$/gi, '')
-    .replace(/контактн.*телефон.*/gi, '')
-    .replace(/дополнительн.*номер.*/gi, '')
-    .replace(/гар\.?\s*талон.*$/gi, '')
-    .replace(/гарантийн.*талон.*$/gi, '')
-    .replace(/прошу.*$/gi, '')
-    .replace(/на\s+(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
-    .trim();
+        if (!data) return;
 
-// финальная чистка пробелов
-product = product.replace(/\s{2,}/g, ' ').trim();
+        for (const order of data) {
+            const { error } = await supabase
+                .from('Orders')
+                .update({ status: "Доставлен" })
+                .eq('id', order.id);
 
-// если вдруг пусто — берём сырой текст (страховка)
-if (!product || product.length < 2) {
-    product = cleaned;
-}
+            if (error) {
+                console.log("AUTO CLOSE ERROR:", error);
+            }
+        }
+
+        console.log("🔁 AUTO CLOSE DONE");
+
+    } catch (e) {
+        console.log("AUTO CLOSE ERROR:", e);
+    }
+}, 24 * 60 * 60 * 1000); // раз в сутки
+
+// ======================
+// WEBHOOK
+// ======================
+app.post('/api/telegram/webhook', (req, res) => {
+    bot.handleUpdate(req.body);
+    res.sendStatus(200);
+});
+
+// ======================
+// SERVER
+// ======================
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, async () => {
+    console.log(`Server running on port ${PORT}`);
+
+    try {
+        await bot.telegram.setWebhook(
+            'https://mosti-bot.onrender.com/api/telegram/webhook'
+        );
+
+        console.log("Webhook установлен успешно ✅");
+
+    } catch (err) {
+        console.error("Webhook error:", err);
+    }
+});
 
         product = product.replace(/\s{2,}/g, ' ').trim();
 
