@@ -5,7 +5,10 @@ const { Telegraf } = require('telegraf');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
+
+// 🔧 ВАЖНО: оба парсера обязательно
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // ======================
 // SUPABASE
@@ -23,7 +26,7 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 console.log("🚀 MOSTI SYSTEM STARTED");
 
 // ======================
-// START COMMAND
+// START
 // ======================
 bot.start((ctx) => {
     ctx.reply("MOSTI бот активен 🚀");
@@ -34,7 +37,6 @@ bot.start((ctx) => {
 // ======================
 bot.on('text', async (ctx) => {
     try {
-
         const text = ctx.message.text;
         console.log("📩 RAW MESSAGE:", text);
 
@@ -63,7 +65,7 @@ bot.on('text', async (ctx) => {
         const address = location;
 
         // ======================
-        // PRODUCT PARSER (СТАБИЛЬНЫЙ)
+        // PRODUCT PARSER
         // ======================
         let product = cleaned;
 
@@ -116,14 +118,22 @@ bot.on('text', async (ctx) => {
 });
 
 // ======================
-// WEBHOOK ROUTE
+// WEBHOOK
 // ======================
 app.post('/api/telegram/webhook', (req, res) => {
-    bot.handleUpdate(req.body);
+    console.log("📦 WEBHOOK HIT:", req.body);
+
+    try {
+        bot.handleUpdate(req.body);
+    } catch (e) {
+        console.log("WEBHOOK ERROR:", e);
+    }
+
     res.sendStatus(200);
 });
+
 // ======================
-// WEBSITE API (TRACK ORDER)
+// TRACK ORDER API
 // ======================
 app.post('/api/track-order', async (req, res) => {
     try {
@@ -137,18 +147,14 @@ app.post('/api/track-order', async (req, res) => {
 
         let result = null;
 
-        // search by order number
         const byOrder = await supabase
             .from('Orders')
             .select('*')
             .eq('order_number', query)
             .maybeSingle();
 
-        if (byOrder.data) {
-            result = byOrder.data;
-        }
+        if (byOrder.data) result = byOrder.data;
 
-        // search by phone
         if (!result) {
             const byPhone = await supabase
                 .from('Orders')
@@ -156,9 +162,7 @@ app.post('/api/track-order', async (req, res) => {
                 .ilike('phone', `%${cleanQuery}%`)
                 .maybeSingle();
 
-            if (byPhone.data) {
-                result = byPhone.data;
-            }
+            if (byPhone.data) result = byPhone.data;
         }
 
         if (!result) {
