@@ -42,7 +42,7 @@ bot.on('text', async (ctx) => {
         const cleaned = text.replace(/\s+/g, ' ').trim();
 
         // ======================
-        // PHONE DETECTION (УЛУЧШЕНО)
+        // PHONE DETECTION
         // ======================
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
@@ -55,18 +55,15 @@ bot.on('text', async (ctx) => {
         }
 
         // ======================
-        // BASE PARSING
+        // PARSING
         // ======================
         const parts = cleaned.split(' - ').map(p => p.trim());
 
         const order_number = parts[0] || null;
         const customer_name = parts[1] || null;
 
-        let rest = parts.slice(2).join(' - ') || '';
+        const rest = parts.slice(2).join(' ') || cleaned;
 
-        // ======================
-        // ADDRESS (НЕ ЛОМАТЬ СТРУКТУРУ)
-        // ======================
         let address = rest
             .replace(/к\.?\s*т\.?.*$/gi, '')
             .replace(/контактн.*телефон.*/gi, '')
@@ -78,47 +75,33 @@ bot.on('text', async (ctx) => {
 
         const city = address;
 
-       // ======================
-// PRODUCT (НОВАЯ ВЕРСИЯ)
-// ======================
+        // ======================
+        // PRODUCT (СТАБИЛЬНО)
+        // ======================
+        let product = cleaned
+            .replace(order_number || '', '')
+            .replace(customer_name || '', '')
+            .replace(address || '', '')
+            .replace(phones || '', '')
+            .replace(/к\.?\s*т\.?.*$/gi, '')
+            .replace(/контактн.*телефон.*/gi, '')
+            .replace(/дополнительн.*номер.*/gi, '')
+            .replace(/гар\.?\s*талон.*$/gi, '')
+            .replace(/гарантийн.*талон.*$/gi, '')
+            .replace(/на\s+(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
+            .replace(/прошу.*$/gi, '')
+            .trim();
 
-let product = "";
+        if (!product || product.length < 2) {
+            product = rest || cleaned;
+        }
 
-// сначала ищем "Товар:"
-const productMatch = cleaned.match(/товар\s*:?\s*(.+)/i);
-
-if (productMatch) {
-    product = productMatch[1];
-} else {
-
-    // иначе ищем известные виды техники
-    const techMatch = cleaned.match(
-        /(машина\s+стир(?:-| )?суш.*|машина\s+стиральная.*|холодильник(?:-| )?мороз.*|холодильник.*|телевизор.*|пылесос.*|духовой\s+шкаф.*|варочная\s+панель.*|кондиционер.*|морозильник.*)/i
-    );
-
-    if (techMatch) {
-        product = techMatch[0];
-    }
-}
-
-// убираем служебный текст
-product = product
-    .replace(/гар\.?\s*талон.*$/i, "")
-    .replace(/гарантийн.*талон.*$/i, "")
-    .replace(/прошу.*$/i, "")
-    .replace(/на\s+(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*$/i, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-
-// если совсем ничего не нашли — сохраняем остаток
-if (!product) {
-    product = rest;
-}
+        product = product.replace(/\s{2,}/g, ' ').trim();
 
         // ======================
-        // SAVE
+        // SAVE ORDER
         // ======================
-        const { error } = await supabase
+        const { data, error } = await supabase
             .from('Orders')
             .insert([{
                 order_number,
@@ -128,12 +111,16 @@ if (!product) {
                 phone: phones,
                 product,
                 status: "Собирается на складе."
-            }]);
+            }])
+            .select()
+            .single();
 
         if (error) {
             console.log("❌ SUPABASE ERROR:", error);
             return ctx.reply("❌ Ошибка сохранения заявки");
         }
+
+        console.log("✅ ORDER SAVED:", data.order_number);
 
         return ctx.reply("✅ Заявка принята");
 
@@ -147,9 +134,49 @@ if (!product) {
 // WEBHOOK
 // ======================
 app.post('/api/telegram/webhook', (req, res) => {
-    bot.handleUpdate(req.body);
+    try {
+        bot.handleUpdate(req.body);
+    } catch (e) {
+        console.log("WEBHOOK ERROR:", e);
+    }
     res.sendStatus(200);
 });
+
+// ======================
+// AUTO DELIVERY STATUS (НА СЛЕДУЮЩИЙ ДЕНЬ)
+// ======================
+setInterval(async () => {
+    try {
+        const { data: orders } = await supabase
+            .from('Orders')
+            .select('*')
+            .neq('status', 'Заказ доставлен');
+
+        if (!orders || orders.length === 0) return;
+
+        const now = new Date();
+
+        for (const order of orders) {
+
+            const createdAt = new Date(order.created_at || order.inserted_at || now);
+            const diffHours = (now - createdAt) / (1000 * 60 * 60);
+
+            // через 24 часа закрываем
+            if (diffHours >= 24) {
+
+                await supabase
+                    .from('Orders')
+                    .update({ status: 'Заказ доставлен' })
+                    .eq('id', order.id);
+
+                console.log("✅ AUTO CLOSED:", order.order_number);
+            }
+        }
+
+    } catch (err) {
+        console.log("AUTO CLOSE ERROR:", err);
+    }
+}, 60 * 60 * 1000);
 
 // ======================
 // TRACK ORDER API
@@ -214,7 +241,7 @@ app.get('/', (req, res) => {
 });
 
 // ======================
-// START SERVER + WEBHOOK
+// START SERVER
 // ======================
 const PORT = process.env.PORT || 3000;
 
