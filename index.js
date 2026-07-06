@@ -6,6 +6,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
