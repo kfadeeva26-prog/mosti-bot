@@ -75,26 +75,34 @@ bot.on('text', async (ctx) => {
 
         const city = address;
 
-        // ======================
-        // PRODUCT (СТАБИЛЬНО)
-        // ======================
-        let product = cleaned
-            .replace(order_number || '', '')
-            .replace(customer_name || '', '')
-            .replace(address || '', '')
-            .replace(phones || '', '')
-            .replace(/к\.?\s*т\.?.*$/gi, '')
-            .replace(/контактн.*телефон.*/gi, '')
-            .replace(/дополнительн.*номер.*/gi, '')
-            .replace(/гар\.?\s*талон.*$/gi, '')
-            .replace(/гарантийн.*талон.*$/gi, '')
-            .replace(/на\s+(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
-            .replace(/прошу.*$/gi, '')
-            .trim();
+    // ======================
+// PRODUCT (СТАБИЛЬНО И ПРОСТО)
+// ======================
 
-        if (!product || product.length < 2) {
-            product = rest || cleaned;
-        }
+// Берём всё после телефона или после последнего "-"
+let product = cleaned;
+
+// убираем только явный мусор, НИЧЕГО больше
+product = product
+    .replace(order_number || '', '')
+    .replace(customer_name || '', '')
+    .replace(phones || '', '')
+    .replace(/к\.?\s*т\.?.*$/gi, '')
+    .replace(/контактн.*телефон.*/gi, '')
+    .replace(/дополнительн.*номер.*/gi, '')
+    .replace(/гар\.?\s*талон.*$/gi, '')
+    .replace(/гарантийн.*талон.*$/gi, '')
+    .replace(/прошу.*$/gi, '')
+    .replace(/на\s+(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
+    .trim();
+
+// финальная чистка пробелов
+product = product.replace(/\s{2,}/g, ' ').trim();
+
+// если вдруг пусто — берём сырой текст (страховка)
+if (!product || product.length < 2) {
+    product = cleaned;
+}
 
         product = product.replace(/\s{2,}/g, ' ').trim();
 
