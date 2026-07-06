@@ -43,7 +43,7 @@ bot.on('text', async (ctx) => {
         const cleaned = text.replace(/\s+/g, ' ').trim();
 
         // ======================
-        // PHONE DETECTION
+        // PHONE DETECTION (без привязки к структуре)
         // ======================
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
@@ -53,27 +53,36 @@ bot.on('text', async (ctx) => {
         }
 
         // ======================
-        // SPLIT BASE STRUCTURE
+        // SAFE STRUCTURE PARSER (ИСПРАВЛЕНО)
         // ======================
         const parts = cleaned.split(' - ').map(p => p.trim());
 
         const order_number = parts[0] || null;
         const customer_name = parts[1] || null;
-        const location = parts[2] || null;
 
-        const city = location;
-        const address = location;
+        // всё остальное считаем единым блоком
+        let rest = parts.slice(2).join(' - ') || '';
 
         // ======================
-        // PRODUCT PARSER (СТАБИЛЬНЫЙ)
+        // ADDRESS (очищаем только мусор)
         // ======================
+        let address = rest
+            .replace(/к\.?\s*т\.?.*$/gi, '')
+            .replace(/контактн.*телефон.*/gi, '')
+            .replace(/дополнительн.*номер.*/gi, '')
+            .trim();
 
+        const city = address;
+
+        // ======================
+        // PRODUCT PARSER (ТВОЙ РАБОЧИЙ)
+        // ======================
         let product = cleaned;
 
         product = product
             .replace(order_number || '', '')
             .replace(customer_name || '', '')
-            .replace(location || '', '')
+            .replace(address || '', '')
             .replace(phones || '', '')
             .replace(/к\.?\s*т\.?.*$/gi, '')
             .replace(/контактн.*телефон.*/gi, '')
@@ -84,12 +93,10 @@ bot.on('text', async (ctx) => {
             .replace(/прошу.*$/gi, '')
             .trim();
 
-        // 🔥 единственная защита
         if (!product || product.length < 3) {
             product = cleaned;
         }
 
-        // финальная чистка
         product = product.replace(/\s{2,}/g, ' ').trim();
 
         // ======================
