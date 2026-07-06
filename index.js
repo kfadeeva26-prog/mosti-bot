@@ -52,21 +52,19 @@ bot.on('text', async (ctx) => {
         }
 
         // ======================
-        // SAFE STRUCTURE PARSER (НЕ ЗАВИСИТ ОТ "-")
+        // BASE PARSING
         // ======================
         const parts = cleaned.split(' - ').map(p => p.trim());
 
         const order_number = parts[0] || null;
         const customer_name = parts[1] || null;
 
-        // всё остальное = один поток
-        let rest = parts.slice(2).join(' - ') || cleaned;
+        let rest = parts.slice(2).join(' - ') || '';
 
         // ======================
-        // ADDRESS (очистка мусора)
+        // ADDRESS (ЧИСТИМ МИНИМАЛЬНО)
         // ======================
         let address = rest
-            .replace(phones || '', '')
             .replace(/к\.?\s*т\.?.*$/gi, '')
             .replace(/контактн.*телефон.*/gi, '')
             .replace(/дополнительн.*номер.*/gi, '')
@@ -78,7 +76,7 @@ bot.on('text', async (ctx) => {
         const city = address;
 
         // ======================
-        // PRODUCT PARSER (СТАБИЛЬНЫЙ)
+        // PRODUCT (ГЛАВНОЕ — НЕ ЛОМАТЬ!)
         // ======================
         let product = cleaned;
 
@@ -96,15 +94,15 @@ bot.on('text', async (ctx) => {
             .replace(/прошу.*$/gi, '')
             .trim();
 
-        // защита
+        // 🔥 ГЛАВНАЯ ЗАЩИТА (НЕ ДАЁМ ПУСТОТУ)
         if (!product || product.length < 3) {
-            product = cleaned;
+            product = rest || cleaned;
         }
 
         product = product.replace(/\s{2,}/g, ' ').trim();
 
         // ======================
-        // SAVE TO SUPABASE
+        // SAVE
         // ======================
         const { error } = await supabase
             .from('Orders')
@@ -135,14 +133,7 @@ bot.on('text', async (ctx) => {
 // WEBHOOK
 // ======================
 app.post('/api/telegram/webhook', (req, res) => {
-    console.log("📦 WEBHOOK HIT:", req.body);
-
-    try {
-        bot.handleUpdate(req.body);
-    } catch (e) {
-        console.log("WEBHOOK ERROR:", e);
-    }
-
+    bot.handleUpdate(req.body);
     res.sendStatus(200);
 });
 
