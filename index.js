@@ -25,7 +25,7 @@ bot.start((ctx) => {
 });
 
 // ======================
-// PARSER + SAVE ORDER
+// PARSER
 // ======================
 
 bot.on('text', async (ctx) => {
@@ -35,46 +35,103 @@ bot.on('text', async (ctx) => {
 
     try {
 
-        // ❌ убираем мусор (гарантийные талоны и прочее)
-        const cleanedText = text
-            .replace(/гар\.?\s*талон.*$/i, '')
-            .replace(/гарантийный\s*талон.*$/i, '')
+        // ======================
+        // НОРМАЛИЗАЦИЯ
+        // ======================
+        const normalized = text
+            .replace(/\s+/g, ' ')
             .trim();
 
-        // 📞 ищем телефон (к.т., к т, к.т. и т.д.)
-        const phoneMatch = cleanedText.match(
-            /(?:к\.?\s*т\.?|контакт(?:ный)?\s*тел(?:ефон)?\.?)\s*[:\-]?\s*([\d\s+]+)/i
-        );
+        // ======================
+        // УДАЛЕНИЕ МУСОРА
+        // ======================
+        const cleaned = normalized
+            .replace(/гар\.?\s*талон.*$/gi, '')
+            .replace(/гарантийный\s*талон.*$/gi, '')
+            .replace(/прошу.*$/gi, '')
+            .trim();
 
-        const phone = phoneMatch
-            ? phoneMatch[1].replace(/\s/g, '')
-            : null;
+        // ======================
+        // ТЕЛЕФОНЫ (ВСЕ)
+        // ======================
+        const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
-        // ➖ делим по структуре
-        const parts = cleanedText.split(' - ').map(p => p.trim());
+        let phones = null;
+        if (phoneMatches) {
+            phones = phoneMatches
+                .map(p => p.replace(/\D/g, ''))
+                .join(', ');
+        }
+
+        // ======================
+        // РАЗБИЕНИЕ
+        // ======================
+        const parts = cleaned.split(' - ').map(p => p.trim());
 
         const order_number = parts[0] || null;
         const customer_name = parts[1] || null;
         const location = parts[2] || null;
 
-        // 🏙 город
+        // ======================
+        // ГОРОД + ОБЛАСТЬ
+        // ======================
         let city = null;
+
         if (location) {
-            const match = location.match(/г\.?\s*([^,]+)/i);
-            if (match) city = match[1].trim();
+
+            const lower = location.toLowerCase();
+
+            const matchCity = location.match(/г\.?\s*([^,]+)/i);
+            const matchVillage = location.match(/(?:г\.п\.|д\.|пос\.|рп\.)\s*([^,]+)/i);
+
+            let place = matchCity?.[1] || matchVillage?.[1] || null;
+
+            let region = null;
+
+            if (lower.includes('гомель')) region = 'Гомельская область';
+            else if (lower.includes('брест')) region = 'Брестская область';
+            else if (lower.includes('гродно')) region = 'Гродненская область';
+            else if (lower.includes('витебск')) region = 'Витебская область';
+            else if (lower.includes('могилев')) region = 'Могилёвская область';
+            else if (lower.includes('минск')) region = 'Минская область';
+
+            city = [region, place].filter(Boolean).join(', ');
         }
 
-        // 📦 товар
-        let product = parts[3] || null;
+        // ======================
+        // АДРЕС
+        // ======================
+        let address = null;
+
+        if (location) {
+
+            const addrMatch = location.match(/(ул\.|улица|пр\.|просп\.|пер\.)[^,]+/i);
+            const houseMatch = location.match(/д\.\s*\d+[\/\w-]*/i);
+            const flatMatch = location.match(/кв\.\s*\d+/i);
+
+            address = [addrMatch?.[0], houseMatch?.[0], flatMatch?.[0]]
+                .filter(Boolean)
+                .join(', ') || location;
+        }
+
+        // ======================
+        // ТОВАР (ЧИСТКА)
+        // ======================
+        let product = parts.slice(3).join(' - ') || null;
 
         if (product) {
             product = product
-                .replace(/гар\.?\s*талон.*/i, '')
-                .replace(/прошу.*$/i, '')
+                .replace(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g, '')
+                .replace(/к\.?\s*т\.?.*/gi, '')
+                .replace(/гар\.?\s*талон.*/gi, '')
+                .replace(/гарантийный\s*талон.*/gi, '')
+                .replace(/прошу.*$/gi, '')
                 .trim();
         }
 
-        // 💾 запись в Supabase
+        // ======================
+        // SUPABASE
+        // ======================
         const { error } = await supabase
             .from('Orders')
             .insert([
@@ -82,8 +139,8 @@ bot.on('text', async (ctx) => {
                     order_number,
                     customer_name,
                     city,
-                    address: location,
-                    phone,
+                    address,
+                    phone: phones,
                     product,
                     status: "Собирается на складе."
                 }
