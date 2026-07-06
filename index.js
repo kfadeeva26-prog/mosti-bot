@@ -30,17 +30,18 @@ bot.start((ctx) => {
 });
 
 // ======================
-// TELEGRAM MESSAGE HANDLER
+// MESSAGE HANDLER
 // ======================
 bot.on('text', async (ctx) => {
     try {
         const text = ctx.message.text;
-
         console.log("📩 RAW MESSAGE:", text);
 
         const cleaned = text.replace(/\s+/g, ' ').trim();
 
+        // ======================
         // PHONE EXTRACTION
+        // ======================
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
         let phones = null;
@@ -50,7 +51,9 @@ bot.on('text', async (ctx) => {
                 .join(', ');
         }
 
+        // ======================
         // SPLIT BASIC STRUCTURE
+        // ======================
         const parts = cleaned.split(' - ').map(p => p.trim());
 
         const order_number = parts[0] || null;
@@ -60,7 +63,9 @@ bot.on('text', async (ctx) => {
         const city = location;
         const address = location;
 
-        // PRODUCT CLEANING
+        // ======================
+        // PRODUCT CLEANING (УЛУЧШЕННАЯ ВЕРСИЯ)
+        // ======================
         let product = cleaned;
 
         product = product
@@ -68,16 +73,24 @@ bot.on('text', async (ctx) => {
             .replace(customer_name || '', '')
             .replace(location || '', '')
             .replace(phones || '', '')
+            .replace(/к\.?\s*т\.?.*$/gi, '')
+            .replace(/контактн(ый|ого)\s*телефон.*$/gi, '')
+            .replace(/дополнительн(ый|ого)\s*номер.*$/gi, '')
             .replace(/гар\.?\s*талон.*$/gi, '')
-            .replace(/гарантийный\s*талон.*$/gi, '')
+            .replace(/гарантийн(ый|ого)\s*талон.*$/gi, '')
+            .replace(/на\s*(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
             .replace(/прошу.*$/gi, '')
+            .replace(/,\s*,/g, ',')
+            .replace(/\s{2,}/g, ' ')
             .trim();
 
         if (!product || product.length < 2) {
             product = "Не указано";
         }
 
+        // ======================
         // SAVE TO SUPABASE
+        // ======================
         const { error } = await supabase
             .from('Orders')
             .insert([{
@@ -95,16 +108,16 @@ bot.on('text', async (ctx) => {
             return ctx.reply("❌ Ошибка сохранения заявки");
         }
 
-        ctx.reply("✅ Заявка принята");
+        return ctx.reply("✅ Заявка принята");
 
     } catch (err) {
         console.log("❌ ERROR:", err);
-        ctx.reply("❌ Ошибка обработки заявки");
+        return ctx.reply("❌ Ошибка обработки заявки");
     }
 });
 
 // ======================
-// TELEGRAM WEBHOOK ROUTE (ВАЖНО)
+// TELEGRAM WEBHOOK
 // ======================
 app.post('/api/telegram/webhook', (req, res) => {
     bot.handleUpdate(req.body);
