@@ -42,30 +42,45 @@ bot.on('text', async (ctx) => {
         const cleaned = text.replace(/\s+/g, ' ').trim();
 
         // ======================
-        // PHONE DETECTION
+        // PHONE
         // ======================
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
         let phones = null;
         if (phoneMatches) {
-            phones = phoneMatches.map(p => p.replace(/\D/g, '')).join(', ');
+            phones = phoneMatches
+                .map(p => p.replace(/\D/g, ''))
+                .filter(p => p.length >= 9)
+                .join(', ');
         }
 
         // ======================
-        // BASE PARSING
+        // SPLIT BASE
         // ======================
         const parts = cleaned.split(' - ').map(p => p.trim());
 
         const order_number = parts[0] || null;
         const customer_name = parts[1] || null;
 
-        let rest = parts.slice(2).join(' - ') || '';
-
-        const city = rest;
-        const address = rest;
+        let rest = parts.slice(2).join(' - ') || cleaned;
 
         // ======================
-        // PRODUCT (СТАБИЛЬНЫЙ)
+        // ADDRESS (СТАБИЛЬНО)
+        // ======================
+        let address = rest
+            .replace(/товар\s*:?.*$/i, '')
+            .replace(/к\.?\s*т\.?.*$/gi, '')
+            .replace(/контактн.*телефон.*/gi, '')
+            .replace(/дополнительн.*номер.*/gi, '')
+            .replace(/гар\.?\s*талон.*$/gi, '')
+            .replace(/гарантийн.*талон.*$/gi, '')
+            .replace(/прошу.*$/gi, '')
+            .trim();
+
+        const city = address;
+
+        // ======================
+        // PRODUCT (СТАБИЛЬНО + НЕ ЛОМАЕТСЯ)
         // ======================
         let product = "";
 
@@ -75,7 +90,7 @@ bot.on('text', async (ctx) => {
             product = productMatch[1];
         } else {
             const techMatch = cleaned.match(
-                /(машина\s+стир(?:-| )?суш.*|машина\s+стиральная.*|холодильник.*|телевизор.*|пылесос.*|духовой\s*шкаф.*|варочная\s*панель.*|кондиционер.*|морозильник.*)/i
+                /(машина\s+стир(?:-| )?суш.*|машина\s+стиральная.*|холодильник.*|телевизор.*|пылесос.*|духовой\s+шкаф.*|варочная\s+панель.*|кондиционер.*|морозильник.*)/i
             );
 
             if (techMatch) {
@@ -87,12 +102,11 @@ bot.on('text', async (ctx) => {
             .replace(/гар\.?\s*талон.*$/i, "")
             .replace(/гарантийн.*талон.*$/i, "")
             .replace(/прошу.*$/i, "")
-            .replace(/на\s*(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, "")
             .replace(/\s{2,}/g, " ")
             .trim();
 
         if (!product) {
-            product = rest || "Не указано";
+            product = rest;
         }
 
         // ======================
@@ -107,7 +121,8 @@ bot.on('text', async (ctx) => {
                 address,
                 phone: phones,
                 product,
-                status: "Собирается на складе."
+                status: "Собирается на складе.",
+                created_at: new Date().toISOString()
             }]);
 
         if (error) {
@@ -124,22 +139,21 @@ bot.on('text', async (ctx) => {
 });
 
 // ======================
-// AUTO CLOSE (24h)
+// AUTO CLOSE (24 часа)
 // ======================
 setInterval(async () => {
     try {
-        const { data: orders } = await supabase
+        const { data } = await supabase
             .from('Orders')
             .select('*')
             .neq('status', 'Заказ доставлен');
 
-        if (!orders || orders.length === 0) return;
+        if (!data) return;
 
         const now = new Date();
 
-        for (const order of orders) {
-
-            const created = new Date(order.created_at || now);
+        for (const order of data) {
+            const created = new Date(order.created_at);
             const diffHours = (now - created) / (1000 * 60 * 60);
 
             if (diffHours >= 24) {
@@ -148,12 +162,12 @@ setInterval(async () => {
                     .update({ status: 'Заказ доставлен' })
                     .eq('id', order.id);
 
-                console.log("✅ AUTO CLOSED:", order.order_number);
+                console.log("✅ CLOSED:", order.order_number);
             }
         }
 
-    } catch (err) {
-        console.log("AUTO CLOSE ERROR:", err);
+    } catch (e) {
+        console.log("AUTO CLOSE ERROR:", e);
     }
 }, 60 * 60 * 1000);
 
@@ -166,69 +180,7 @@ app.post('/api/telegram/webhook', (req, res) => {
 });
 
 // ======================
-// TRACK ORDER API
-// ======================
-app.post('/api/track-order', async (req, res) => {
-    try {
-        const { query } = req.body;
-
-        if (!query) {
-            return res.status(400).json({ error: "NO_QUERY" });
-        }
-
-        const cleanQuery = query.replace(/\D/g, '');
-
-        let result = null;
-
-        const byOrder = await supabase
-            .from('Orders')
-            .select('*')
-            .eq('order_number', query)
-            .maybeSingle();
-
-        if (byOrder.data) result = byOrder.data;
-
-        if (!result) {
-            const byPhone = await supabase
-                .from('Orders')
-                .select('*')
-                .ilike('phone', `%${cleanQuery}%`)
-                .maybeSingle();
-
-            if (byPhone.data) result = byPhone.data;
-        }
-
-        if (!result) {
-            return res.json({
-                found: false,
-                message: "Заказ не найден"
-            });
-        }
-
-        return res.json({
-            found: true,
-            order_number: result.order_number,
-            status: result.status,
-            city: result.city,
-            address: result.address,
-            product: result.product
-        });
-
-    } catch (err) {
-        console.log("TRACK ERROR:", err);
-        return res.status(500).json({ error: "SERVER_ERROR" });
-    }
-});
-
-// ======================
-// HEALTH CHECK
-// ======================
-app.get('/', (req, res) => {
-    res.send('MOSTI SYSTEM RUNNING 🚀');
-});
-
-// ======================
-// START SERVER + WEBHOOK
+// SERVER
 // ======================
 const PORT = process.env.PORT || 3000;
 
