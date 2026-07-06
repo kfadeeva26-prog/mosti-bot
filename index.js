@@ -6,7 +6,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 
-// 🔧 ВАЖНО: оба парсера обязательно
+// middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -64,36 +64,33 @@ bot.on('text', async (ctx) => {
         const city = location;
         const address = location;
 
-       // ======================
-// PRODUCT PARSER (СТАБИЛЬНЫЙ ВОЗВРАТ)
-// ======================
+        // ======================
+        // PRODUCT PARSER (СТАБИЛЬНЫЙ)
+        // ======================
 
-// берём "грязный, но полный" текст
-let product = cleaned;
+        let product = cleaned;
 
-// убираем только очевидный мусор
-product = product
-    .replace(order_number || '', '')
-    .replace(customer_name || '', '')
-    .replace(location || '', '')
-    .replace(phones || '', '')
-    .replace(/к\.?\s*т\.?.*$/gi, '')
-    .replace(/контактн.*телефон.*/gi, '')
-    .replace(/дополнительн.*номер.*/gi, '')
-    .replace(/гар\.?\s*талон.*/gi, '')
-    .replace(/гарантийн.*талон.*/gi, '')
-    .replace(/на\s*(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
-    .replace(/прошу.*$/gi, '')
-    .trim();
+        product = product
+            .replace(order_number || '', '')
+            .replace(customer_name || '', '')
+            .replace(location || '', '')
+            .replace(phones || '', '')
+            .replace(/к\.?\s*т\.?.*$/gi, '')
+            .replace(/контактн.*телефон.*/gi, '')
+            .replace(/дополнительн.*номер.*/gi, '')
+            .replace(/гар\.?\s*талон.*$/gi, '')
+            .replace(/гарантийн.*талон.*$/gi, '')
+            .replace(/на\s*(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
+            .replace(/прошу.*$/gi, '')
+            .trim();
 
-// 🔥 ВАЖНО: защита от пустого товара
-if (!product || product.length < 3) {
-    product = cleaned; // fallback — берём всё что есть
-}
-
-        if (!product || product.length < 2) {
-            product = "Не указано";
+        // 🔥 единственная защита
+        if (!product || product.length < 3) {
+            product = cleaned;
         }
+
+        // финальная чистка
+        product = product.replace(/\s{2,}/g, ' ').trim();
 
         // ======================
         // SAVE TO SUPABASE
