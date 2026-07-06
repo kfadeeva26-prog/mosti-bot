@@ -16,44 +16,42 @@ const supabase = createClient(
 
 console.log("🚀 MOSTI LOGISTICS SYSTEM STARTED");
 
-// ======================
+// =========================
 // START
-// ======================
-
+// =========================
 bot.start((ctx) => {
     ctx.reply("MOSTI бот активен 🚀");
 });
 
-// ======================
-// PARSER
-// ======================
-
+// =========================
+// PARSER ENGINE
+// =========================
 bot.on('text', async (ctx) => {
 
     const text = ctx.message.text;
-    console.log("RAW MESSAGE:", text);
+    console.log("RAW:", text);
 
     try {
 
-        // ======================
-        // НОРМАЛИЗАЦИЯ
-        // ======================
+        // =========================
+        // NORMALIZE
+        // =========================
         const normalized = text
             .replace(/\s+/g, ' ')
             .trim();
 
-        // ======================
-        // УДАЛЕНИЕ МУСОРА
-        // ======================
+        // =========================
+        // REMOVE UNNEEDED INFO
+        // =========================
         const cleaned = normalized
             .replace(/гар\.?\s*талон.*$/gi, '')
             .replace(/гарантийный\s*талон.*$/gi, '')
             .replace(/прошу.*$/gi, '')
             .trim();
 
-        // ======================
-        // ТЕЛЕФОНЫ (ВСЕ)
-        // ======================
+        // =========================
+        // PHONE EXTRACTION (ALL NUMBERS)
+        // =========================
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
         let phones = null;
@@ -63,28 +61,28 @@ bot.on('text', async (ctx) => {
                 .join(', ');
         }
 
-        // ======================
-        // РАЗБИЕНИЕ
-        // ======================
+        // =========================
+        // STRUCTURE SPLIT
+        // =========================
         const parts = cleaned.split(' - ').map(p => p.trim());
 
         const order_number = parts[0] || null;
         const customer_name = parts[1] || null;
         const location = parts[2] || null;
 
-        // ======================
-        // ГОРОД + ОБЛАСТЬ
-        // ======================
+        // =========================
+        // REGION + CITY/SETTLEMENT
+        // =========================
         let city = null;
 
         if (location) {
 
             const lower = location.toLowerCase();
 
-            const matchCity = location.match(/г\.?\s*([^,]+)/i);
-            const matchVillage = location.match(/(?:г\.п\.|д\.|пос\.|рп\.)\s*([^,]+)/i);
+            const cityMatch = location.match(/г\.?\s*([^,]+)/i);
+            const settlementMatch = location.match(/(?:г\.п\.|д\.|пос\.|рп\.)\s*([^,]+)/i);
 
-            let place = matchCity?.[1] || matchVillage?.[1] || null;
+            const place = cityMatch?.[1] || settlementMatch?.[1] || null;
 
             let region = null;
 
@@ -98,25 +96,25 @@ bot.on('text', async (ctx) => {
             city = [region, place].filter(Boolean).join(', ');
         }
 
-        // ======================
-        // АДРЕС
-        // ======================
+        // =========================
+        // CLEAN ADDRESS ONLY
+        // =========================
         let address = null;
 
         if (location) {
 
-            const addrMatch = location.match(/(ул\.|улица|пр\.|просп\.|пер\.)[^,]+/i);
-            const houseMatch = location.match(/д\.\s*\d+[\/\w-]*/i);
-            const flatMatch = location.match(/кв\.\s*\d+/i);
+            const street = location.match(/(ул\.|улица|пр\.|просп\.|пер\.)[^,]+/i);
+            const house = location.match(/д\.\s*\d+[\/\w-]*/i);
+            const flat = location.match(/кв\.\s*\d+/i);
 
-            address = [addrMatch?.[0], houseMatch?.[0], flatMatch?.[0]]
+            address = [street?.[0], house?.[0], flat?.[0]]
                 .filter(Boolean)
                 .join(', ') || location;
         }
 
-        // ======================
-        // ТОВАР (ЧИСТКА)
-        // ======================
+        // =========================
+        // PRODUCT CLEAN EXTRACTION
+        // =========================
         let product = parts.slice(3).join(' - ') || null;
 
         if (product) {
@@ -129,9 +127,9 @@ bot.on('text', async (ctx) => {
                 .trim();
         }
 
-        // ======================
-        // SUPABASE
-        // ======================
+        // =========================
+        // SAVE TO SUPABASE
+        // =========================
         const { error } = await supabase
             .from('Orders')
             .insert([
@@ -154,15 +152,14 @@ bot.on('text', async (ctx) => {
         return ctx.reply("✅ Заявка принята");
 
     } catch (err) {
-        console.log("PARSE ERROR:", err);
+        console.log("ERROR:", err);
         return ctx.reply("❌ Ошибка обработки заявки");
     }
 });
 
-// ======================
+// =========================
 // WEBHOOK
-// ======================
-
+// =========================
 app.post('/api/telegram/webhook', async (req, res) => {
     try {
         await bot.handleUpdate(req.body);
@@ -173,18 +170,16 @@ app.post('/api/telegram/webhook', async (req, res) => {
     }
 });
 
-// ======================
+// =========================
 // HEALTH CHECK
-// ======================
-
+// =========================
 app.get('/', (req, res) => {
     res.send('MOSTI server is running 🚀');
 });
 
-// ======================
+// =========================
 // START SERVER
-// ======================
-
+// =========================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, async () => {
