@@ -14,26 +14,24 @@ const supabase = createClient(
     process.env.SUPABASE_KEY
 );
 
-// /start
+// START
 bot.start((ctx) => {
     console.log("START command triggered");
     ctx.reply('MOSTI бот активен 🚀');
 });
 
-// ВСЕ текстовые сообщения
+// ВСЕ ТЕКСТОВЫЕ СООБЩЕНИЯ
 bot.on('text', async (ctx) => {
 
-    console.log("📩 NEW MESSAGE RECEIVED");
+    console.log("📩 MESSAGE RECEIVED");
     console.log("TEXT:", ctx.message.text);
-
-    const text = ctx.message.text;
 
     try {
         const { data, error } = await supabase
             .from('orders')
             .insert([
                 {
-                    raw_text: text
+                    raw_text: ctx.message.text
                 }
             ])
             .select();
@@ -56,8 +54,12 @@ bot.on('text', async (ctx) => {
     }
 });
 
-// Webhook endpoint
+// WEBHOOK
 app.post('/api/telegram/webhook', async (req, res) => {
+
+    console.log("🔥 WEBHOOK HIT");
+    console.log("BODY:", req.body);
+
     try {
         await bot.handleUpdate(req.body);
         res.sendStatus(200);
@@ -67,7 +69,7 @@ app.post('/api/telegram/webhook', async (req, res) => {
     }
 });
 
-// health check
+// HEALTH CHECK
 app.get('/', (req, res) => {
     res.send('MOSTI server is running 🚀');
 });
