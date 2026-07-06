@@ -41,7 +41,6 @@ if (error) {
 
 ctx.reply("✅ Заявка принята.");
 });
-});
 
 // Webhook
 app.post('/api/telegram/webhook', async (req, res) => {
