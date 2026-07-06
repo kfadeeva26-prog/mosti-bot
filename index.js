@@ -1,9 +1,11 @@
 require('dotenv').config();
 
+const express = require('express');
 const { Telegraf } = require('telegraf');
 const { createClient } = require('@supabase/supabase-js');
 
-console.log("🚀 MOSTI CRM STARTED");
+const app = express();
+app.use(express.json());
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
@@ -12,39 +14,33 @@ const supabase = createClient(
     process.env.SUPABASE_KEY
 );
 
+console.log("🚀 MOSTI LOGISTICS SYSTEM STARTED");
+
 // =======================
-// ROUTES ENGINE
+// ROUTES (ГРАФИК)
 // =======================
 
 const ROUTES = {
-    monday: ["vitebsk", "mogilev", "minsk_region"],
+    monday: ["vitebsk", "mogilev", "minsk"],
     tuesday: ["grodno"],
-    wednesday: ["brest", "minsk_region"],
+    wednesday: ["brest", "minsk"],
     thursday: [],
-    friday: ["gomel", "minsk_region"],
+    friday: ["gomel", "minsk"],
     saturday: [],
     sunday: []
 };
 
 // =======================
-// NORMALIZE
+// CITY → REGION MAP
 // =======================
 
-function normalize(text) {
-    if (!text) return null;
-    return text.toLowerCase().trim();
-}
+function getRegion(city) {
+    if (!city) return null;
 
-// =======================
-// GET DAY FROM CITY
-// =======================
-
-function getDeliveryDay(city) {
-    const c = normalize(city);
+    const c = city.toLowerCase().trim();
 
     const map = {
-        "минск": "minsk_region",
-        "минская область": "minsk_region",
+        "минск": "minsk",
 
         "витебск": "vitebsk",
         "могилев": "mogilev",
@@ -55,7 +51,14 @@ function getDeliveryDay(city) {
         "гомель": "gomel"
     };
 
-    const region = map[c];
+    return map[c] || null;
+}
+
+// =======================
+// REGION → DELIVERY DAY
+// =======================
+
+function getDeliveryDay(region) {
     if (!region) return null;
 
     for (const [day, regions] of Object.entries(ROUTES)) {
@@ -68,60 +71,57 @@ function getDeliveryDay(city) {
 }
 
 // =======================
-// PARSER (REAL LOGISTICS FORMAT)
+// CURRENT DAY
 // =======================
 
-function parseOrder(text) {
-
-    const parts = text.split(' - ').map(p => p.trim());
-
-    const order_number = parts[0] || null;
-    const customer_name = parts[1] || null;
-
-    let location = parts[2] || null;
-    let phones = parts[3] || null;
-    let product = parts[4] || null;
-    let comment = parts.slice(5).join(' ') || null;
-
-    let city = null;
-    let phone = null;
-
-    // город
-    if (location) {
-        const match = location.match(/г\.\s*([^,]+)/i);
-        if (match) city = match[1].trim();
-    }
-
-    // телефон
-    if (phones) {
-        const match = phones.match(/375\d{9}/);
-        if (match) phone = match[0];
-    }
-
-    // принудительный день
-    let forcedDay = null;
-
-    const lower = text.toLowerCase();
-
-    if (lower.includes("понедельник")) forcedDay = "monday";
-    if (lower.includes("вторник")) forcedDay = "tuesday";
-    if (lower.includes("среда")) forcedDay = "wednesday";
-    if (lower.includes("четверг")) forcedDay = "thursday";
-    if (lower.includes("пятницу")) forcedDay = "friday";
-
-    return {
-        order_number,
-        customer_name,
-        city,
-        phone,
-        product,
-        comment,
-        forcedDay
-    };
+function getToday() {
+    return new Date()
+        .toLocaleDateString('en-US', { weekday: 'long' })
+        .toLowerCase();
 }
 
 // =======================
-// BOT
+// STATUS ENGINE
+// =======================
+
+function getStatus(order) {
+
+    const region = getRegion(order.city);
+    const deliveryDay = getDeliveryDay(region);
+
+    const today = getToday();
+
+    // если не нашли город
+    if (!deliveryDay) {
+        return "Собирается на складе.";
+    }
+
+    // если сегодня день доставки
+    if (today === deliveryDay) {
+        return "Доставка ожидается сегодня. Водитель скоро свяжется.";
+    }
+
+    // если доставка позже
+    const daysOrder = {
+        monday: 1,
+        tuesday: 2,
+        wednesday: 3,
+        thursday: 4,
+        friday: 5,
+        saturday: 6,
+        sunday: 0
+    };
+
+    if (daysOrder[today] < daysOrder[deliveryDay]) {
+        return "Собирается на складе.";
+    }
+
+    // если день уже прошёл → перенос
+    return "Заказ передан в доставку.";
+}
+
+// =======================
+// BOT (ПРИЁМ ЗАЯВОК)
 // =======================
 
 bot.start((ctx) => {
@@ -132,55 +132,88 @@ bot.on('text', async (ctx) => {
 
     const text = ctx.message.text;
 
-    console.log("📩 RAW:", text);
-
     try {
 
-        const parsed = parseOrder(text);
+        const parts = text.split(' - ').map(p => p.trim());
 
-        console.log("📦 PARSED:", parsed);
+        const order_number = parts[0] || null;
+        const customer_name = parts[1] || null;
 
-        const delivery_day = parsed.forcedDay || getDeliveryDay(parsed.city);
+        let location = parts[2] || null;
+        let city = null;
+
+        if (location) {
+            const match = location.match(/г\.\s*([^,]+)/i);
+            if (match) city = match[1].trim();
+        }
+
+        const product = parts[4] || null;
 
         const { data, error } = await supabase
             .from('Orders')
             .insert([
                 {
-                    order_number: parsed.order_number,
-                    customer_name: parsed.customer_name,
-                    city: parsed.city,
-                    address: parsed.comment,
-                    phone: parsed.phone,
-                    product: parsed.product,
-                    status: "Принята в обработку",
-                    raw_text: text,
-                    planned_delivery: delivery_day
+                    order_number,
+                    customer_name,
+                    city,
+                    product,
+                    status: "Собирается на складе.",
+                    raw_text: text
                 }
-            ])
-            .select();
+            ]);
 
         if (error) {
-            console.log("❌ DB ERROR:", error);
-            return ctx.reply("❌ Ошибка сохранения заявки");
+            console.log(error);
+            return ctx.reply("❌ Ошибка сохранения");
         }
-
-        console.log("✅ SAVED:", data);
 
         ctx.reply("✅ Заявка принята");
 
     } catch (err) {
-        console.log("❌ ERROR:", err);
-        ctx.reply("❌ Ошибка сервера");
+        console.log(err);
+        ctx.reply("❌ Ошибка обработки");
     }
 });
 
 // =======================
-// START
+// API ДЛЯ САЙТА
 // =======================
 
-bot.launch()
-    .then(() => console.log("🤖 MOSTI CRM RUNNING"))
-    .catch(err => console.log("BOT ERROR:", err));
+app.get('/api/status/:order_number', async (req, res) => {
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+    const order_number = req.params.order_number;
+
+    const { data, error } = await supabase
+        .from('Orders')
+        .select('*')
+        .eq('order_number', order_number)
+        .single();
+
+    if (error || !data) {
+        return res.json({
+            success: false,
+            message: "Заявка не найдена"
+        });
+    }
+
+    const status = getStatus(data);
+
+    return res.json({
+        success: true,
+        order_number: data.order_number,
+        customer_name: data.customer_name,
+        city: data.city,
+        product: data.product,
+        status: status
+    });
+});
+
+// =======================
+// SERVER START
+// =======================
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
