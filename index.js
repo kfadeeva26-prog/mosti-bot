@@ -8,52 +8,66 @@ const app = express();
 app.use(express.json());
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
+
 const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_KEY
 );
 
-// Команда /start
+// /start
 bot.start((ctx) => {
+    console.log("START command triggered");
     ctx.reply('MOSTI бот активен 🚀');
 });
 
-// Ответ на любое текстовое сообщение
+// ВСЕ текстовые сообщения
 bot.on('text', async (ctx) => {
+
+    console.log("📩 NEW MESSAGE RECEIVED");
+    console.log("TEXT:", ctx.message.text);
 
     const text = ctx.message.text;
 
-    const { data, error } = await supabase
-    .from('orders')
-    .insert([
-        {
-            raw_text: text
+    try {
+        const { data, error } = await supabase
+            .from('orders')
+            .insert([
+                {
+                    raw_text: text
+                }
+            ])
+            .select();
+
+        console.log("📦 SUPABASE RESPONSE:");
+        console.log("DATA:", data);
+        console.log("ERROR:", error);
+
+        if (error) {
+            console.log("❌ INSERT FAILED");
+            return ctx.reply("❌ Ошибка сохранения заявки.");
         }
-    ])
-    .select();
 
-console.log("SUPABASE DATA:", data);
-console.log("SUPABASE ERROR:", error);
+        console.log("✅ INSERT SUCCESS");
+        ctx.reply("✅ Заявка принята.");
 
-if (error) {
-    return ctx.reply("❌ Ошибка сохранения заявки.");
-}
-
-ctx.reply("✅ Заявка принята.");
+    } catch (err) {
+        console.log("🔥 CRITICAL ERROR:", err);
+        ctx.reply("❌ Критическая ошибка сервера.");
+    }
 });
 
-// Webhook
+// Webhook endpoint
 app.post('/api/telegram/webhook', async (req, res) => {
     try {
         await bot.handleUpdate(req.body);
         res.sendStatus(200);
     } catch (err) {
-        console.error(err);
+        console.error("WEBHOOK ERROR:", err);
         res.sendStatus(500);
     }
 });
 
-// Проверка сервера
+// health check
 app.get('/', (req, res) => {
     res.send('MOSTI server is running 🚀');
 });
@@ -71,4 +85,4 @@ app.listen(PORT, async () => {
     } catch (err) {
         console.error('Ошибка установки webhook:', err);
     }
-})
+});
