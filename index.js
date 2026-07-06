@@ -56,7 +56,18 @@ bot.on('text', async (ctx) => {
 });
 
 // WEBHOOK
-app.post('/api/telegram/webhook', async (req, res) => {
+app.post('/api/telegram/webhook', (req, res) => {
+    console.log("🔥 WEBHOOK HIT");
+    
+    bot.handleUpdate(req.body)
+        .then(() => {
+            console.log("✅ UPDATE PROCESSED");
+            res.sendStatus(200);
+        })
+        .catch((err) => {
+            console.error("❌ UPDATE ERROR:", err);
+            res.sendStatus(200);
+        });
 
     console.log("🔥 WEBHOOK HIT");
     console.log("BODY:", req.body);
