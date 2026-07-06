@@ -78,31 +78,42 @@ bot.on('text', async (ctx) => {
 
         const city = address;
 
-        // ======================
-        // PRODUCT (СТАБИЛЬНЫЙ РЕЖИМ)
-        // ======================
-        let product = cleaned;
+       // ======================
+// PRODUCT (НОВАЯ ВЕРСИЯ)
+// ======================
 
-        product = product
-            .replace(order_number || '', '')
-            .replace(customer_name || '', '')
-            .replace(address || '', '')
-            .replace(phones || '', '')
-            .replace(/к\.?\s*т\.?.*$/gi, '')
-            .replace(/контактн.*телефон.*/gi, '')
-            .replace(/дополнительн.*номер.*/gi, '')
-            .replace(/гар\.?\s*талон.*$/gi, '')
-            .replace(/гарантийн.*талон.*$/gi, '')
-            .replace(/на\s*(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
-            .replace(/прошу.*$/gi, '')
-            .trim();
+let product = "";
 
-        // fallback чтобы товар НЕ пропадал
-        if (!product || product.length < 3) {
-            product = rest || cleaned;
-        }
+// сначала ищем "Товар:"
+const productMatch = cleaned.match(/товар\s*:?\s*(.+)/i);
 
-        product = product.replace(/\s{2,}/g, ' ').trim();
+if (productMatch) {
+    product = productMatch[1];
+} else {
+
+    // иначе ищем известные виды техники
+    const techMatch = cleaned.match(
+        /(машина\s+стир(?:-| )?суш.*|машина\s+стиральная.*|холодильник(?:-| )?мороз.*|холодильник.*|телевизор.*|пылесос.*|духовой\s+шкаф.*|варочная\s+панель.*|кондиционер.*|морозильник.*)/i
+    );
+
+    if (techMatch) {
+        product = techMatch[0];
+    }
+}
+
+// убираем служебный текст
+product = product
+    .replace(/гар\.?\s*талон.*$/i, "")
+    .replace(/гарантийн.*талон.*$/i, "")
+    .replace(/прошу.*$/i, "")
+    .replace(/на\s+(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*$/i, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+// если совсем ничего не нашли — сохраняем остаток
+if (!product) {
+    product = rest;
+}
 
         // ======================
         // SAVE
