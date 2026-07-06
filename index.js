@@ -37,9 +37,13 @@ bot.start((ctx) => {
 bot.on('text', async (ctx) => {
     try {
         const text = ctx.message.text;
+        console.log("📩 RAW MESSAGE:", text);
+
         const cleaned = text.replace(/\s+/g, ' ').trim();
 
-        // PHONE
+        // ======================
+        // PHONE DETECTION
+        // ======================
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
         let phones = null;
@@ -47,7 +51,9 @@ bot.on('text', async (ctx) => {
             phones = phoneMatches.map(p => p.replace(/\D/g, '')).join(', ');
         }
 
-        // SPLIT
+        // ======================
+        // BASE PARSING
+        // ======================
         const parts = cleaned.split(' - ').map(p => p.trim());
 
         const order_number = parts[0] || null;
@@ -56,37 +62,49 @@ bot.on('text', async (ctx) => {
         let rest = parts.slice(2).join(' - ') || '';
 
         const city = rest;
+        const address = rest;
 
         // ======================
-        // PRODUCT (СТАБИЛЬНО)
+        // PRODUCT (СТАБИЛЬНЫЙ)
         // ======================
-        let product = cleaned;
+        let product = "";
+
+        const productMatch = cleaned.match(/товар\s*:?\s*(.+)/i);
+
+        if (productMatch) {
+            product = productMatch[1];
+        } else {
+            const techMatch = cleaned.match(
+                /(машина\s+стир(?:-| )?суш.*|машина\s+стиральная.*|холодильник.*|телевизор.*|пылесос.*|духовой\s*шкаф.*|варочная\s*панель.*|кондиционер.*|морозильник.*)/i
+            );
+
+            if (techMatch) {
+                product = techMatch[0];
+            }
+        }
 
         product = product
-            .replace(order_number || '', '')
-            .replace(customer_name || '', '')
-            .replace(rest || '', '')
-            .replace(phones || '', '')
-            .replace(/гар\.?\s*талон.*$/gi, '')
-            .replace(/гарантийн.*талон.*$/gi, '')
-            .replace(/прошу.*$/gi, '')
-            .replace(/на\s*(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
+            .replace(/гар\.?\s*талон.*$/i, "")
+            .replace(/гарантийн.*талон.*$/i, "")
+            .replace(/прошу.*$/i, "")
+            .replace(/на\s*(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, "")
+            .replace(/\s{2,}/g, " ")
             .trim();
 
-        if (!product || product.length < 3) {
+        if (!product) {
             product = rest || "Не указано";
         }
 
-        product = product.replace(/\s{2,}/g, ' ').trim();
-
+        // ======================
         // SAVE
+        // ======================
         const { error } = await supabase
             .from('Orders')
             .insert([{
                 order_number,
                 customer_name,
                 city,
-                address: city,
+                address,
                 phone: phones,
                 product,
                 status: "Собирается на складе."
@@ -106,15 +124,7 @@ bot.on('text', async (ctx) => {
 });
 
 // ======================
-// WEBHOOK (ОДИН, НЕ ДВА!!!)
-// ======================
-app.post('/api/telegram/webhook', (req, res) => {
-    bot.handleUpdate(req.body);
-    res.sendStatus(200);
-});
-
-// ======================
-// AUTO CLOSE (через 24 часа)
+// AUTO CLOSE (24h)
 // ======================
 setInterval(async () => {
     try {
@@ -123,31 +133,40 @@ setInterval(async () => {
             .select('*')
             .neq('status', 'Заказ доставлен');
 
-        if (!orders) return;
+        if (!orders || orders.length === 0) return;
 
         const now = new Date();
 
         for (const order of orders) {
-            const created = new Date(order.created_at || now);
-            const diff = (now - created) / (1000 * 60 * 60);
 
-            if (diff >= 24) {
+            const created = new Date(order.created_at || now);
+            const diffHours = (now - created) / (1000 * 60 * 60);
+
+            if (diffHours >= 24) {
                 await supabase
                     .from('Orders')
                     .update({ status: 'Заказ доставлен' })
                     .eq('id', order.id);
 
-                console.log("✅ CLOSED:", order.order_number);
+                console.log("✅ AUTO CLOSED:", order.order_number);
             }
         }
 
-    } catch (e) {
-        console.log("AUTO CLOSE ERROR:", e);
+    } catch (err) {
+        console.log("AUTO CLOSE ERROR:", err);
     }
 }, 60 * 60 * 1000);
 
 // ======================
-// TRACK API
+// WEBHOOK
+// ======================
+app.post('/api/telegram/webhook', (req, res) => {
+    bot.handleUpdate(req.body);
+    res.sendStatus(200);
+});
+
+// ======================
+// TRACK ORDER API
 // ======================
 app.post('/api/track-order', async (req, res) => {
     try {
@@ -180,7 +199,10 @@ app.post('/api/track-order', async (req, res) => {
         }
 
         if (!result) {
-            return res.json({ found: false, message: "Заказ не найден" });
+            return res.json({
+                found: false,
+                message: "Заказ не найден"
+            });
         }
 
         return res.json({
@@ -199,7 +221,14 @@ app.post('/api/track-order', async (req, res) => {
 });
 
 // ======================
-// SERVER
+// HEALTH CHECK
+// ======================
+app.get('/', (req, res) => {
+    res.send('MOSTI SYSTEM RUNNING 🚀');
+});
+
+// ======================
+// START SERVER + WEBHOOK
 // ======================
 const PORT = process.env.PORT || 3000;
 
