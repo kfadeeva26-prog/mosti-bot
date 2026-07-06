@@ -42,13 +42,16 @@ bot.on('text', async (ctx) => {
         const cleaned = text.replace(/\s+/g, ' ').trim();
 
         // ======================
-        // PHONE DETECTION
+        // PHONE DETECTION (УЛУЧШЕНО)
         // ======================
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
         let phones = null;
         if (phoneMatches) {
-            phones = phoneMatches.map(p => p.replace(/\D/g, '')).join(', ');
+            phones = phoneMatches
+                .map(p => p.replace(/\D/g, ''))
+                .filter(p => p.length >= 9)
+                .join(', ');
         }
 
         // ======================
@@ -62,7 +65,7 @@ bot.on('text', async (ctx) => {
         let rest = parts.slice(2).join(' - ') || '';
 
         // ======================
-        // ADDRESS (ЧИСТИМ МИНИМАЛЬНО)
+        // ADDRESS (НЕ ЛОМАТЬ СТРУКТУРУ)
         // ======================
         let address = rest
             .replace(/к\.?\s*т\.?.*$/gi, '')
@@ -76,7 +79,7 @@ bot.on('text', async (ctx) => {
         const city = address;
 
         // ======================
-        // PRODUCT (ГЛАВНОЕ — НЕ ЛОМАТЬ!)
+        // PRODUCT (СТАБИЛЬНЫЙ РЕЖИМ)
         // ======================
         let product = cleaned;
 
@@ -94,7 +97,7 @@ bot.on('text', async (ctx) => {
             .replace(/прошу.*$/gi, '')
             .trim();
 
-        // 🔥 ГЛАВНАЯ ЗАЩИТА (НЕ ДАЁМ ПУСТОТУ)
+        // fallback чтобы товар НЕ пропадал
         if (!product || product.length < 3) {
             product = rest || cleaned;
         }
