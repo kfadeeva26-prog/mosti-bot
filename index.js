@@ -6,7 +6,6 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 
-// middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -43,7 +42,7 @@ bot.on('text', async (ctx) => {
         const cleaned = text.replace(/\s+/g, ' ').trim();
 
         // ======================
-        // PHONE DETECTION (без привязки к структуре)
+        // PHONE DETECTION
         // ======================
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
@@ -53,29 +52,33 @@ bot.on('text', async (ctx) => {
         }
 
         // ======================
-        // SAFE STRUCTURE PARSER (ИСПРАВЛЕНО)
+        // SAFE STRUCTURE PARSER (НЕ ЗАВИСИТ ОТ "-")
         // ======================
         const parts = cleaned.split(' - ').map(p => p.trim());
 
         const order_number = parts[0] || null;
         const customer_name = parts[1] || null;
 
-        // всё остальное считаем единым блоком
-        let rest = parts.slice(2).join(' - ') || '';
+        // всё остальное = один поток
+        let rest = parts.slice(2).join(' - ') || cleaned;
 
         // ======================
-        // ADDRESS (очищаем только мусор)
+        // ADDRESS (очистка мусора)
         // ======================
         let address = rest
+            .replace(phones || '', '')
             .replace(/к\.?\s*т\.?.*$/gi, '')
             .replace(/контактн.*телефон.*/gi, '')
             .replace(/дополнительн.*номер.*/gi, '')
+            .replace(/гар\.?\s*талон.*$/gi, '')
+            .replace(/гарантийн.*талон.*$/gi, '')
+            .replace(/прошу.*$/gi, '')
             .trim();
 
         const city = address;
 
         // ======================
-        // PRODUCT PARSER (ТВОЙ РАБОЧИЙ)
+        // PRODUCT PARSER (СТАБИЛЬНЫЙ)
         // ======================
         let product = cleaned;
 
@@ -93,6 +96,7 @@ bot.on('text', async (ctx) => {
             .replace(/прошу.*$/gi, '')
             .trim();
 
+        // защита
         if (!product || product.length < 3) {
             product = cleaned;
         }
