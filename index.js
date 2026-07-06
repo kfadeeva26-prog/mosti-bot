@@ -24,7 +24,34 @@ bot.start((ctx) => {
 });
 
 // ======================
-// PARSER (STABLE VERSION)
+// PRODUCT EXTRACTOR (NEW LOGIC)
+// ======================
+function extractProduct(text, order_number, customer_name, location, phones) {
+
+    let result = text;
+
+    if (order_number) result = result.replace(order_number, '');
+    if (customer_name) result = result.replace(customer_name, '');
+    if (location) result = result.replace(location, '');
+
+    if (phones) {
+        phones.split(', ').forEach(p => {
+            result = result.replace(p, '');
+        });
+    }
+
+    result = result
+        .replace(/гар\.?\s*талон.*$/gi, '')
+        .replace(/гарантийный\s*талон.*$/gi, '')
+        .replace(/прошу.*$/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    return result.length > 2 ? result : "Не указано";
+}
+
+// ======================
+// PARSER
 // ======================
 bot.on('text', async (ctx) => {
 
@@ -33,25 +60,17 @@ bot.on('text', async (ctx) => {
 
     try {
 
-        // ======================
-        // NORMALIZE
-        // ======================
         const normalized = text
             .replace(/\s+/g, ' ')
             .trim();
 
-        // ======================
-        // CLEAN TRASH TEXT
-        // ======================
         const cleaned = normalized
             .replace(/гар\.?\s*талон.*$/gi, '')
             .replace(/гарантийный\s*талон.*$/gi, '')
             .replace(/прошу.*$/gi, '')
             .trim();
 
-        // ======================
-        // PHONES (ALL)
-        // ======================
+        // PHONE
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
         let phones = null;
@@ -61,44 +80,31 @@ bot.on('text', async (ctx) => {
                 .join(', ');
         }
 
-        // ======================
-        // SPLIT STRUCTURE
-        // ======================
+        // SPLIT
         const parts = cleaned.split(' - ').map(p => p.trim());
 
         const order_number = parts[0] || null;
         const customer_name = parts[1] || null;
-
-        // ======================
-        // CITY + ADDRESS (SAME FULL TEXT)
-        // ======================
         const location = parts[2] || null;
 
+        // CITY + ADDRESS (FULL TEXT FIX)
         const city = location || null;
         const address = location || null;
 
-        // ======================
-        // PRODUCT (SAFE EXTRACTION)
-        // ======================
-        let product = parts.slice(3).join(' - ') || null;
+        // PRODUCT (FIXED)
+        let product = extractProduct(
+            cleaned,
+            order_number,
+            customer_name,
+            location,
+            phones
+        );
 
-        if (product) {
-            product = product
-                .replace(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g, '')
-                .replace(/к\.?\s*т\.?.*/gi, '')
-                .replace(/гар\.?\s*талон.*/gi, '')
-                .replace(/гарантийный\s*талон.*/gi, '')
-                .replace(/прошу.*$/gi, '')
-                .trim();
-        }
-
-        if (!product || product.length < 3) {
+        if (!product || product.length < 2) {
             product = "Не указано";
         }
 
-        // ======================
-        // SAVE TO SUPABASE
-        // ======================
+        // SAVE
         const { error } = await supabase
             .from('Orders')
             .insert([
