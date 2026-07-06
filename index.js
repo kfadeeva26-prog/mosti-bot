@@ -16,14 +16,14 @@ const supabase = createClient(
 );
 
 // ======================
-// TELEGRAM BOT
+// BOT
 // ======================
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 console.log("🚀 MOSTI SYSTEM STARTED");
 
 // ======================
-// START COMMAND
+// START
 // ======================
 bot.start((ctx) => {
     ctx.reply("MOSTI бот активен 🚀");
@@ -35,24 +35,22 @@ bot.start((ctx) => {
 bot.on('text', async (ctx) => {
     try {
         const text = ctx.message.text;
-        console.log("📩 RAW MESSAGE:", text);
+        console.log("📩 RAW:", text);
 
         const cleaned = text.replace(/\s+/g, ' ').trim();
 
         // ======================
-        // PHONE EXTRACTION
+        // PHONES
         // ======================
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
         let phones = null;
         if (phoneMatches) {
-            phones = phoneMatches
-                .map(p => p.replace(/\D/g, ''))
-                .join(', ');
+            phones = phoneMatches.map(p => p.replace(/\D/g, '')).join(', ');
         }
 
         // ======================
-        // SPLIT BASIC STRUCTURE
+        // BASIC SPLIT
         // ======================
         const parts = cleaned.split(' - ').map(p => p.trim());
 
@@ -64,8 +62,14 @@ bot.on('text', async (ctx) => {
         const address = location;
 
         // ======================
-        // PRODUCT CLEANING (УЛУЧШЕННАЯ ВЕРСИЯ)
+        // PRODUCT EXTRACTION (ЖЁСТКО ТОЛЬКО ТЕХНИКА)
         // ======================
+        const TECH = [
+            'lg','samsung','bosch','indesit','whirlpool','beko','haier',
+            'холодильник','стиральная','сушильная','посудомоечная',
+            'машина','телевизор','плита','духовка','морозильник'
+        ];
+
         let product = cleaned;
 
         product = product
@@ -74,22 +78,28 @@ bot.on('text', async (ctx) => {
             .replace(location || '', '')
             .replace(phones || '', '')
             .replace(/к\.?\s*т\.?.*$/gi, '')
-            .replace(/контактн(ый|ого)\s*телефон.*$/gi, '')
-            .replace(/дополнительн(ый|ого)\s*номер.*$/gi, '')
+            .replace(/контактн.*телефон.*$/gi, '')
+            .replace(/дополнительн.*номер.*$/gi, '')
             .replace(/гар\.?\s*талон.*$/gi, '')
-            .replace(/гарантийн(ый|ого)\s*талон.*$/gi, '')
+            .replace(/гарантийн.*талон.*$/gi, '')
             .replace(/на\s*(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
             .replace(/прошу.*$/gi, '')
-            .replace(/,\s*,/g, ',')
-            .replace(/\s{2,}/g, ' ')
             .trim();
 
-        if (!product || product.length < 2) {
-            product = "Не указано";
+        let chunks = product.split(',').map(p => p.trim());
+
+        let found = chunks.find(p =>
+            TECH.some(k => p.toLowerCase().includes(k))
+        );
+
+        if (!found) {
+            found = chunks.find(p => p.length > 5);
         }
 
+        product = found || "Не указано";
+
         // ======================
-        // SAVE TO SUPABASE
+        // SAVE
         // ======================
         const { error } = await supabase
             .from('Orders')
@@ -117,7 +127,7 @@ bot.on('text', async (ctx) => {
 });
 
 // ======================
-// TELEGRAM WEBHOOK
+// WEBHOOK
 // ======================
 app.post('/api/telegram/webhook', (req, res) => {
     bot.handleUpdate(req.body);
@@ -125,17 +135,15 @@ app.post('/api/telegram/webhook', (req, res) => {
 });
 
 // ======================
-// TRACK ORDER API
+// TRACK
 // ======================
 app.post('/api/track-order', async (req, res) => {
     try {
         const { query } = req.body;
 
-        if (!query) {
-            return res.status(400).json({ error: "NO_QUERY" });
-        }
+        if (!query) return res.status(400).json({ error: "NO_QUERY" });
 
-        const cleanQuery = query.replace(/\D/g, '');
+        const clean = query.replace(/\D/g, '');
 
         let result = null;
 
@@ -151,17 +159,14 @@ app.post('/api/track-order', async (req, res) => {
             const byPhone = await supabase
                 .from('Orders')
                 .select('*')
-                .ilike('phone', `%${cleanQuery}%`)
+                .ilike('phone', `%${clean}%`)
                 .maybeSingle();
 
             if (byPhone.data) result = byPhone.data;
         }
 
         if (!result) {
-            return res.json({
-                found: false,
-                message: "Заказ не найден"
-            });
+            return res.json({ found: false, message: "Заказ не найден" });
         }
 
         return res.json({
@@ -180,17 +185,17 @@ app.post('/api/track-order', async (req, res) => {
 });
 
 // ======================
-// HEALTH CHECK
+// HEALTH
 // ======================
 app.get('/', (req, res) => {
     res.send('MOSTI SYSTEM RUNNING 🚀');
 });
 
 // ======================
-// START SERVER
+// START
 // ======================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log("Server running on port", PORT);
 });
