@@ -15,16 +15,16 @@ const supabase = createClient(
     process.env.SUPABASE_KEY
 );
 
-// START
+// старт
 bot.start((ctx) => {
-    console.log("START command triggered");
+    console.log("START");
     ctx.reply('MOSTI бот активен 🚀');
 });
 
-// ВСЕ ТЕКСТОВЫЕ СООБЩЕНИЯ
+// сообщения
 bot.on('text', async (ctx) => {
 
-    console.log("📩 MESSAGE RECEIVED");
+    console.log("🔥 MESSAGE RECEIVED");
     console.log("TEXT:", ctx.message.text);
 
     try {
@@ -37,51 +37,38 @@ bot.on('text', async (ctx) => {
             ])
             .select();
 
-        console.log("📦 SUPABASE RESPONSE:");
+        console.log("📦 SUPABASE RESULT");
         console.log("DATA:", data);
         console.log("ERROR:", error);
 
         if (error) {
-            console.log("❌ INSERT FAILED");
             return ctx.reply("❌ Ошибка сохранения заявки.");
         }
 
-        console.log("✅ INSERT SUCCESS");
         ctx.reply("✅ Заявка принята.");
 
     } catch (err) {
-        console.log("🔥 CRITICAL ERROR:", err);
-        ctx.reply("❌ Критическая ошибка сервера.");
+        console.log("❌ CRITICAL ERROR:", err);
+        ctx.reply("❌ Ошибка сервера.");
     }
 });
 
-// WEBHOOK
-app.post('/api/telegram/webhook', (req, res) => {
-    console.log("🔥 WEBHOOK HIT");
-    
-    bot.handleUpdate(req.body)
-        .then(() => {
-            console.log("✅ UPDATE PROCESSED");
-            res.sendStatus(200);
-        })
-        .catch((err) => {
-            console.error("❌ UPDATE ERROR:", err);
-            res.sendStatus(200);
-        });
+// webhook
+app.post('/api/telegram/webhook', async (req, res) => {
 
     console.log("🔥 WEBHOOK HIT");
-    console.log("BODY:", req.body);
 
     try {
         await bot.handleUpdate(req.body);
+        console.log("✅ UPDATE OK");
         res.sendStatus(200);
     } catch (err) {
-        console.error("WEBHOOK ERROR:", err);
-        res.sendStatus(500);
+        console.log("❌ WEBHOOK ERROR:", err);
+        res.sendStatus(200);
     }
 });
 
-// HEALTH CHECK
+// проверка сервера
 app.get('/', (req, res) => {
     res.send('MOSTI server is running 🚀');
 });
@@ -97,6 +84,6 @@ app.listen(PORT, async () => {
         );
         console.log('Webhook установлен успешно ✅');
     } catch (err) {
-        console.error('Ошибка установки webhook:', err);
+        console.log('Webhook error:', err);
     }
 });
