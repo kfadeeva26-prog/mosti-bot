@@ -30,27 +30,29 @@ bot.start((ctx) => {
 });
 
 // ======================
-// TELEGRAM MESSAGE HANDLER
+// MESSAGE HANDLER
 // ======================
 bot.on('text', async (ctx) => {
     try {
-        const text = ctx.message.text;
 
+        const text = ctx.message.text;
         console.log("📩 RAW MESSAGE:", text);
 
         const cleaned = text.replace(/\s+/g, ' ').trim();
 
-        // PHONE EXTRACTION
+        // ======================
+        // PHONE DETECTION
+        // ======================
         const phoneMatches = cleaned.match(/(?:\+?375|80)\s*\d[\d\s\-()]{7,}/g);
 
         let phones = null;
         if (phoneMatches) {
-            phones = phoneMatches
-                .map(p => p.replace(/\D/g, ''))
-                .join(', ');
+            phones = phoneMatches.map(p => p.replace(/\D/g, '')).join(', ');
         }
 
-        // SPLIT BASIC STRUCTURE
+        // ======================
+        // SPLIT BASE STRUCTURE
+        // ======================
         const parts = cleaned.split(' - ').map(p => p.trim());
 
         const order_number = parts[0] || null;
@@ -60,7 +62,9 @@ bot.on('text', async (ctx) => {
         const city = location;
         const address = location;
 
-        // PRODUCT CLEANING
+        // ======================
+        // PRODUCT PARSER (СТАБИЛЬНЫЙ)
+        // ======================
         let product = cleaned;
 
         product = product
@@ -68,16 +72,24 @@ bot.on('text', async (ctx) => {
             .replace(customer_name || '', '')
             .replace(location || '', '')
             .replace(phones || '', '')
+            .replace(/к\.?\s*т\.?.*$/gi, '')
+            .replace(/контактн(ый|ого)\s*телефон.*$/gi, '')
+            .replace(/дополнительн(ый|ого)\s*номер.*$/gi, '')
             .replace(/гар\.?\s*талон.*$/gi, '')
-            .replace(/гарантийный\s*талон.*$/gi, '')
+            .replace(/гарантийн(ый|ого)\s*талон.*$/gi, '')
+            .replace(/на\s*(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье).*/gi, '')
             .replace(/прошу.*$/gi, '')
+            .replace(/,\s*,/g, ',')
+            .replace(/\s{2,}/g, ' ')
             .trim();
 
         if (!product || product.length < 2) {
             product = "Не указано";
         }
 
+        // ======================
         // SAVE TO SUPABASE
+        // ======================
         const { error } = await supabase
             .from('Orders')
             .insert([{
@@ -95,24 +107,23 @@ bot.on('text', async (ctx) => {
             return ctx.reply("❌ Ошибка сохранения заявки");
         }
 
-        ctx.reply("✅ Заявка принята");
+        return ctx.reply("✅ Заявка принята");
 
     } catch (err) {
         console.log("❌ ERROR:", err);
-        ctx.reply("❌ Ошибка обработки заявки");
+        return ctx.reply("❌ Ошибка обработки заявки");
     }
 });
 
 // ======================
-// TELEGRAM WEBHOOK ROUTE (ВАЖНО)
+// WEBHOOK ROUTE
 // ======================
 app.post('/api/telegram/webhook', (req, res) => {
     bot.handleUpdate(req.body);
     res.sendStatus(200);
 });
-
 // ======================
-// TRACK ORDER API
+// WEBSITE API (TRACK ORDER)
 // ======================
 app.post('/api/track-order', async (req, res) => {
     try {
@@ -126,14 +137,18 @@ app.post('/api/track-order', async (req, res) => {
 
         let result = null;
 
+        // search by order number
         const byOrder = await supabase
             .from('Orders')
             .select('*')
             .eq('order_number', query)
             .maybeSingle();
 
-        if (byOrder.data) result = byOrder.data;
+        if (byOrder.data) {
+            result = byOrder.data;
+        }
 
+        // search by phone
         if (!result) {
             const byPhone = await supabase
                 .from('Orders')
@@ -141,7 +156,9 @@ app.post('/api/track-order', async (req, res) => {
                 .ilike('phone', `%${cleanQuery}%`)
                 .maybeSingle();
 
-            if (byPhone.data) result = byPhone.data;
+            if (byPhone.data) {
+                result = byPhone.data;
+            }
         }
 
         if (!result) {
@@ -174,10 +191,21 @@ app.get('/', (req, res) => {
 });
 
 // ======================
-// START SERVER
+// START SERVER + WEBHOOK
 // ======================
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
+
+    try {
+        await bot.telegram.setWebhook(
+            'https://mosti-bot.onrender.com/api/telegram/webhook'
+        );
+
+        console.log("Webhook установлен успешно ✅");
+
+    } catch (err) {
+        console.error("Webhook error:", err);
+    }
 });
