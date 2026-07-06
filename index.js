@@ -3,6 +3,8 @@ require('dotenv').config();
 const { Telegraf } = require('telegraf');
 const { createClient } = require('@supabase/supabase-js');
 
+console.log("🚀 STARTING BOT IN POLLING MODE");
+
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 const supabase = createClient(
@@ -10,17 +12,15 @@ const supabase = createClient(
     process.env.SUPABASE_KEY
 );
 
-// старт
 bot.start((ctx) => {
-    console.log("START");
+    console.log("START COMMAND");
     ctx.reply('MOSTI бот активен 🚀');
 });
 
-// все сообщения
 bot.on('text', async (ctx) => {
 
     console.log("🔥 MESSAGE RECEIVED");
-    console.log("TEXT:", ctx.message.text);
+    console.log(ctx.message.text);
 
     try {
         const { data, error } = await supabase
@@ -32,9 +32,7 @@ bot.on('text', async (ctx) => {
             ])
             .select();
 
-        console.log("📦 SUPABASE RESULT");
-        console.log("DATA:", data);
-        console.log("ERROR:", error);
+        console.log("SUPABASE:", data, error);
 
         if (error) {
             return ctx.reply("❌ Ошибка сохранения заявки.");
@@ -43,16 +41,14 @@ bot.on('text', async (ctx) => {
         ctx.reply("✅ Заявка принята.");
 
     } catch (err) {
-        console.log("❌ CRITICAL ERROR:", err);
+        console.log("ERROR:", err);
         ctx.reply("❌ Ошибка сервера.");
     }
 });
 
-// запуск бота (ВАЖНО — polling режим)
 bot.launch()
-    .then(() => console.log("🤖 BOT STARTED (polling mode)"))
-    .catch((err) => console.log("BOT LAUNCH ERROR:", err));
+    .then(() => console.log("🤖 BOT STARTED (POLLING ACTIVE)"))
+    .catch(err => console.log("BOT ERROR:", err));
 
-// graceful stop (нужно для Render)
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
