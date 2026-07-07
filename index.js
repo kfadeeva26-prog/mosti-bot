@@ -37,6 +37,22 @@ bot.start((ctx) => {
 bot.on('text', async (ctx) => {
     try {
         const text = ctx.message.text;
+
+// ======================
+// GROUP FILTER
+// ======================
+
+// в группе игнорируем обычные сообщения
+if (ctx.chat.type !== 'private') {
+
+    const isOrder =
+        text.includes(' - ') &&
+        /\d{5,}/.test(text);
+
+    if (!isOrder) {
+        return;
+    }
+}
         console.log("📩 RAW MESSAGE:", text);
 
         const cleaned = text.replace(/\s+/g, ' ').trim();
