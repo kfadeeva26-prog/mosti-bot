@@ -150,6 +150,7 @@ app.post('/api/telegram/webhook', (req, res) => {
 // TRACK ORDER API
 // ======================
 app.post('/api/track-order', async (req, res) => {
+console.log("TRACK HIT:", req.body);
     try {
         const { query } = req.body;
 
