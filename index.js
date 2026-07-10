@@ -244,7 +244,7 @@ async function autoCloseBySchedule() {
     try {
         const now = new Date();
         const day = now.getDay();
-        const nextDay = (day + 1) % 7;
+        const previousDay = (day + 6) % 7;
 
         const { data: orders } = await supabase
             .from('Orders')
@@ -258,7 +258,7 @@ async function autoCloseBySchedule() {
             const city = order.city || "";
             const deliveryDays = getDeliveryDays(city);
 
-            if (deliveryDays.includes(nextDay)) {
+            if (deliveryDays.includes(previousDay)) {
 
                 await supabase
                     .from('Orders')
